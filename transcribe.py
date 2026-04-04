@@ -39,6 +39,16 @@ from output_writer import OutputWriter
 
 
 # =============================================================================
+# 从 utils 导入工具函数
+# =============================================================================
+
+from utils import (
+    setup_logging,
+    validate_input_file,
+    validate_output_dir,
+)
+
+# =============================================================================
 # 配置常量区 - 集中管理可配置参数
 # =============================================================================
 
@@ -233,108 +243,6 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     return parser.parse_args()
-
-
-# =============================================================================
-# 日志系统配置
-# =============================================================================
-
-def setup_logging(level: int = logging.INFO) -> None:
-    """
-    【功能】配置日志系统
-
-    【设计说明】
-        - 使用标准库 logging，无需额外依赖
-        - 根据 verbose 模式切换日志详细程度
-        - 非 verbose 模式下输出简洁，适合日常使用
-
-    【参数】
-        level: 日志级别，logging.INFO 或 logging.DEBUG
-    """
-    # 根据级别选择格式：DEBUG 显示更多信息
-    if level == logging.DEBUG:
-        log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    else:
-        log_format = "%(message)s"  # 简洁格式，只显示消息内容
-
-    logging.basicConfig(
-        level=level,
-        format=log_format,
-        handlers=[logging.StreamHandler(sys.stdout)],
-        force=True  # 覆盖任何已有的日志配置
-    )
-
-
-# =============================================================================
-# 验证函数
-# =============================================================================
-
-def validate_input_file(file_path: Path) -> bool:
-    """
-    【功能】验证输入文件是否有效
-
-    【验证项】
-        1. 文件是否存在
-        2. 是否是文件（非目录）
-        3. 是否可读
-        4. 文件是否非空
-
-    【参数】
-        file_path: 要验证的文件路径
-
-    【返回】
-        bool: 验证通过返回 True，否则返回 False
-    """
-    import os
-
-    if not file_path.exists():
-        logging.debug(f"文件不存在: {file_path}")
-        return False
-
-    if not file_path.is_file():
-        logging.debug(f"路径不是文件: {file_path}")
-        return False
-
-    if not os.access(file_path, os.R_OK):
-        logging.debug(f"文件不可读: {file_path}")
-        return False
-
-    if file_path.stat().st_size == 0:
-        logging.debug(f"文件为空: {file_path}")
-        return False
-
-    return True
-
-
-def validate_output_dir(dir_path: Path) -> bool:
-    """
-    【功能】验证输出目录，不存在则自动创建
-
-    【验证项】
-        1. 目录是否存在或可创建
-        2. 目录是否可写
-
-    【参数】
-        dir_path: 输出目录路径
-
-    【返回】
-        bool: 验证通过返回 True，否则返回 False
-    """
-    import os
-
-    try:
-        # 递归创建目录（包括父目录），exist_ok=True 避免重复创建报错
-        dir_path.mkdir(parents=True, exist_ok=True)
-
-        # 检查目录写入权限
-        if not os.access(dir_path, os.W_OK):
-            logging.debug(f"目录不可写: {dir_path}")
-            return False
-
-        return True
-    except Exception as e:
-        logging.debug(f"无法创建或访问目录 {dir_path}: {e}")
-        return False
 
 
 # =============================================================================
