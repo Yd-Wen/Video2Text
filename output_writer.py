@@ -7,7 +7,7 @@ Video2Text (V2T) - 输出写入模块 (output_writer.py)
     负责将转录结果保存为各种格式的文件。
 
     核心功能：
-    1. 支持多种输出格式：TXT、SRT、VTT、JSON
+    1. 支持多种输出格式：TXT、JSON
     2. 自动处理文件名冲突（添加序号后缀）
     3. 确保输出目录存在并可写
     4. 统一的结果格式标准化
@@ -17,16 +17,6 @@ Video2Text (V2T) - 输出写入模块 (output_writer.py)
         - 仅包含转录的完整文本
         - 段落之间用空行分隔
         - 适合阅读、编辑、搜索引擎索引
-
-    SRT: SubRip 字幕格式
-        - 标准字幕文件格式
-        - 包含时间轴和序号
-        - 兼容大多数视频播放器
-
-    VTT: WebVTT 字幕格式
-        - Web 标准字幕格式
-        - 类似 SRT，但使用点号分隔毫秒
-        - 适合 Web 视频和 HTML5 播放器
 
     JSON: 完整数据格式
         - 包含所有转录信息
@@ -41,8 +31,6 @@ Video2Text (V2T) - 输出写入模块 (output_writer.py)
 
     # 写入不同格式
     writer.write(result, "video", format_type="txt")   # 纯文本
-    writer.write(result, "video", format_type="srt")   # SRT字幕
-    writer.write(result, "video", format_type="vtt")   # WebVTT字幕
     writer.write(result, "video", format_type="json")  # 完整JSON
 
 【依赖要求】
@@ -77,7 +65,7 @@ class OutputWriter:
     """
 
     # 【支持的输出格式】
-    SUPPORTED_FORMATS = ["txt", "srt", "vtt", "json"]
+    SUPPORTED_FORMATS = ["txt", "json"]
 
     def __init__(self, output_dir: Path, encoding: str = "utf-8"):
         """
@@ -168,8 +156,6 @@ class OutputWriter:
         # 使用字典映射，便于扩展新格式
         writers = {
             "txt": self._write_txt,
-            "srt": self._write_srt,
-            "vtt": self._write_vtt,
             "json": self._write_json,
         }
 
@@ -252,84 +238,6 @@ class OutputWriter:
             f.write(text)
             f.write("\n")  # 文件末尾添加换行符（POSIX 标准）
 
-    def _write_srt(self, result: Dict[str, Any], output_file: Path) -> None:
-        """
-        【私有方法】写入 SRT 字幕格式
-
-        【SRT 格式规范】
-            1. 段落序号（从 1 开始）
-            2. 时间轴: HH:MM:SS,mmm --> HH:MM:SS,mmm
-            3. 字幕文本（可多行）
-            4. 空行（段落分隔）
-
-        【时间格式】
-            小时:分钟:秒,毫秒
-            如: 00:01:23,456 --> 00:01:27,890
-
-        【示例输出】
-            1
-            00:00:00,000 --> 00:00:05,320
-            这是第一段字幕。
-
-            2
-            00:00:05,320 --> 00:00:10,150
-            这是第二段字幕。
-        """
-        segments = result.get("segments", [])
-
-        with open(output_file, "w", encoding=self.encoding) as f:
-            for i, seg in enumerate(segments, start=1):
-                # 【转换时间格式】
-                start_time = self._seconds_to_srt_time(seg.get("start", 0))
-                end_time = self._seconds_to_srt_time(seg.get("end", 0))
-                text = seg.get("text", "").strip()
-
-                # 【写入段落】
-                f.write(f"{i}\n")                          # 序号
-                f.write(f"{start_time} --> {end_time}\n")  # 时间轴
-                f.write(f"{text}\n")                        # 文本
-                f.write("\n")                               # 空行分隔
-
-    def _write_vtt(self, result: Dict[str, Any], output_file: Path) -> None:
-        """
-        【私有方法】写入 WebVTT 字幕格式
-
-        【VTT 格式规范】
-            - 文件头必须以 "WEBVTT" 开头
-            - 时间轴: HH:MM:SS.mmm --> HH:MM:SS.mmm
-            - 使用点号而非逗号分隔毫秒
-            - 支持样式和定位（本实现使用基础格式）
-
-        【时间格式】
-            小时:分钟:秒.毫秒
-            如: 00:01:23.456 --> 00:01:27.890
-
-        【示例输出】
-            WEBVTT
-
-            00:00:00.000 --> 00:00:05.320
-            这是第一段字幕。
-
-            00:00:05.320 --> 00:00:10.150
-            这是第二段字幕。
-        """
-        segments = result.get("segments", [])
-
-        with open(output_file, "w", encoding=self.encoding) as f:
-            # 【写入文件头】
-            f.write("WEBVTT\n")
-            f.write("\n")
-
-            # 【写入段落】
-            for seg in segments:
-                start_time = self._seconds_to_vtt_time(seg.get("start", 0))
-                end_time = self._seconds_to_vtt_time(seg.get("end", 0))
-                text = seg.get("text", "").strip()
-
-                f.write(f"{start_time} --> {end_time}\n")
-                f.write(f"{text}\n")
-                f.write("\n")
-
     def _write_json(self, result: Dict[str, Any], output_file: Path) -> None:
         """
         【私有方法】写入 JSON 格式
@@ -380,56 +288,13 @@ class OutputWriter:
                 indent=2             # 美化格式，2 空格缩进
             )
 
-    @staticmethod
-    def _seconds_to_srt_time(seconds: float) -> str:
-        """
-        【静态方法】将秒数转换为 SRT 时间格式
-
-        【格式】HH:MM:SS,mmm
-               如: 01:23:45,678
-
-        【参数】
-            seconds: 时间（秒），如 5025.678
-
-        【返回】
-            str: SRT 格式时间字符串
-        """
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        millis = int((seconds % 1) * 1000)
-        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-
-    @staticmethod
-    def _seconds_to_vtt_time(seconds: float) -> str:
-        """
-        【静态方法】将秒数转换为 VTT 时间格式
-
-        【格式】HH:MM:SS.mmm
-               如: 01:23:45.678
-
-        【参数】
-            seconds: 时间（秒）
-
-        【返回】
-            str: VTT 格式时间字符串
-
-        【与 SRT 的区别】
-            VTT 使用点号分隔毫秒，SRT 使用逗号
-        """
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        millis = int((seconds % 1) * 1000)
-        return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
-
     @classmethod
     def get_supported_formats(cls) -> List[str]:
         """
         【类方法】获取支持的格式列表
 
         【返回】
-            list: 格式名称列表 ["txt", "srt", "vtt", "json"]
+            list: 格式名称列表 ["txt", "json"]
 
         【示例】
             formats = OutputWriter.get_supported_formats()

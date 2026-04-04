@@ -66,7 +66,7 @@ EXIT_OUTPUT_ERROR = 5      # 输出写入失败
 EXIT_MODEL_ERROR = 6       # 模型加载失败
 
 # 【支持的配置选项】与业务逻辑解耦，方便后续扩展
-SUPPORTED_FORMATS = ["txt", "srt", "vtt", "json"]  # 输出格式白名单
+SUPPORTED_FORMATS = ["txt", "json"]  # 输出格式白名单
 SUPPORTED_MODELS = ["tiny", "base", "small", "medium", "large"]  # Whisper模型
 
 # 【默认值配置】与 argparse 定义保持一致，便于统一修改

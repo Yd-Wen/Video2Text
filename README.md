@@ -30,7 +30,7 @@ Video2Text 是一个命令行工具，能够从视频文件中提取音频并使
 | 视频转录 | 支持 MP4/MKV/AVI/MOV 等常见视频格式 |
 | 音频提取 | 自动提取并重采样为 16kHz/16bit WAV |
 | 多语言支持 | 多语言自动检测或手动指定 |
-| 多格式输出 | TXT/SRT/VTT/JSON 四种格式 |
+| 多格式输出 | TXT/JSON 两种格式 |
 | 批量处理 | 支持单个文件处理（批量处理开发中）|
 
 ### 输出格式对比
@@ -38,8 +38,6 @@ Video2Text 是一个命令行工具，能够从视频文件中提取音频并使
 | 格式 | 适用场景 | 特点 |
 |------|----------|------|
 | TXT | 阅读、编辑、搜索引擎索引 | 纯文本，段落分隔 |
-| SRT | 视频播放器字幕 | 标准字幕格式，广泛兼容 |
-| VTT | Web 视频、HTML5 播放器 | Web 标准，支持样式 |
 | JSON | 程序化处理、数据分析 | 完整数据，含时间戳和置信度 |
 
 ### Whisper 模型选择
@@ -187,7 +185,7 @@ python transcribe.py -i video.mp4 -v --keep-temp
 | `--output` | `-o` | 否 | output | 输出目录路径 |
 | `--language` | `-l` | 否 | auto | 语言代码（如 zh, en, ja）|
 | `--model` | `-m` | 否 | base | 模型大小（tiny/base/small/medium/large）|
-| `--format` | `-f` | 否 | txt | 输出格式（txt/srt/vtt/json）|
+| `--format` | `-f` | 否 | txt | 输出格式（txt/json）|
 | `--ffmpeg-path` | - | 否 | ffmpeg | FFmpeg 可执行文件路径 |
 | `--keep-temp` | - | 否 | False | 保留临时音频文件 |
 | `--verbose` | `-v` | 否 | False | 显示详细日志 |
@@ -199,9 +197,9 @@ python transcribe.py -i video.mp4 -v --keep-temp
 python transcribe.py -i meeting.mp4 -o ./output/ -l zh -f txt
 ```
 
-**示例 2: 生成 SRT 字幕文件**
+**示例 2: 生成 JSON 格式文件**
 ```bash
-python transcribe.py -i movie.mkv -o ./subtitles/ -l en -m small -f srt
+python transcribe.py -i movie.mkv -o ./subtitles/ -l en -m small -f json
 ```
 
 **示例 3: 使用指定 FFmpeg 路径**
@@ -221,8 +219,6 @@ python transcribe.py -i video.mp4 -o ./output/ -v --keep-temp
 ```
 output/
 ├── video.txt      # 纯文本格式
-├── video.srt      # SRT 字幕格式
-├── video.vtt      # WebVTT 格式
 └── video.json     # JSON 完整数据
 ```
 
@@ -399,7 +395,7 @@ SOFTWARE.
 **Phase 1 - 基础功能完成**
 
 - 实现核心转录流程：视频 → 音频 → 文本
-- 支持 4 种输出格式：TXT、SRT、VTT、JSON
+- 支持 2 种输出格式：TXT、JSON
 - 集成 FFmpeg 音频提取（16kHz/16bit/单声道）
 - 集成 OpenAI Whisper 语音识别
 - 支持 5 种模型规模选择
