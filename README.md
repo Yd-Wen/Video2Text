@@ -160,7 +160,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-首次运行时会自动下载 Whisper 模型到 `~/.cache/whisper/`（Windows: `%USERPROFILE%\.cache\whisper\`）。
+首次运行时会自动下载 Whisper 模型到项目根目录的 `models/` 文件夹。
 
 ---
 
@@ -266,6 +266,7 @@ Video2Text/
 ├── requirements.txt        # Python 依赖清单
 ├── README.md               # 项目说明文档
 ├── .gitignore              # Git 忽略配置
+├── models/                 # Whisper 模型存放目录（gitignore，自动创建）
 ├── output/                 # 转录结果输出目录（gitignore）
 ├── temp/                   # 临时文件目录（gitignore，自动创建）
 ├── tools/                  # FFmpeg 存放目录（gitignore，可选）
@@ -274,13 +275,17 @@ Video2Text/
 
 ### 模块说明
 
-| 模块 | 职责 | 关键类/函数 |
-|------|------|-------------|
+| 模块/目录 | 职责 | 关键类/函数 |
+|-----------|------|-------------|
 | `transcribe.py` | 流程编排、CLI 接口 | `main()`, `parse_arguments()` |
 | `audio_extractor.py` | FFmpeg 音频提取 | `AudioExtractor` |
 | `transcriber.py` | Whisper 模型加载和转录 | `WhisperTranscriber` |
 | `output_writer.py` | 多格式结果输出 | `OutputWriter` |
 | `utils.py` | 通用工具函数 | `setup_logging()`, `validate_input_file()` |
+| `models/` | Whisper 模型存放目录 | 自动创建，首次运行时下载 |
+| `temp/` | 临时音频文件目录 | 自动创建，运行后自动清理 |
+| `tools/` | FFmpeg 存放目录（可选） | 放置 `ffmpeg.exe` 实现项目独立运行 |
+| `output/` | 转录结果输出目录 | 需在运行时通过 `-o` 指定 |
 
 ---
 
@@ -301,8 +306,8 @@ Video2Text/
 
 **解决:**
 - 首次下载模型需要网络连接
-- 模型缓存位置：`~/.cache/whisper/`
-- 可手动下载模型文件放置到缓存目录
+- 模型下载位置：项目根目录的 `models/` 文件夹
+- 可手动下载模型文件放置到该目录，文件名为 `<模型名>.pt`（如 `base.pt`）
 
 ### 3. 内存不足
 

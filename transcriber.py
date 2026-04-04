@@ -98,8 +98,7 @@ class WhisperTranscriber:
                        可选: tiny, base, small, medium, large
             device: 运行设备，None 表示自动检测
                    "cuda" 强制使用 GPU，"cpu" 强制使用 CPU
-            download_root: 模型下载目录，默认使用 Whisper 缓存目录
-                          通常为 ~/.cache/whisper/
+            download_root: 模型下载目录，默认使用项目 models/ 文件夹
 
         【异常】
             ValueError: 模型名称不支持
@@ -216,9 +215,8 @@ class WhisperTranscriber:
             - 加载模型到指定设备（CPU/GPU）
             - 首次下载可能需要几分钟，取决于网络速度
 
-        【模型缓存位置】
-            - Linux/macOS: ~/.cache/whisper/
-            - Windows: %USERPROFILE%\.cache\whisper\
+        【模型下载位置】
+            项目根目录的 models/ 文件夹（自动创建）
 
         【异常】
             RuntimeError: 模型加载失败

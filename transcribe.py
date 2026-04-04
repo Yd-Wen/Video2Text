@@ -62,6 +62,36 @@ DEFAULT_LANGUAGE = "auto"  # 由 Whisper 自动检测语言
 
 
 # =============================================================================
+# 路径配置
+# =============================================================================
+
+def get_project_root() -> Path:
+    """
+    【功能】获取项目根目录
+
+    【返回】
+        Path: 项目根目录路径（即 transcribe.py 所在目录）
+    """
+    return Path(__file__).parent
+
+
+def get_models_dir() -> Path:
+    """
+    【功能】获取模型存放目录
+
+    【说明】
+        模型存放在项目根目录的 models/ 文件夹下，
+        如果不存在会自动创建。
+
+    【返回】
+        Path: 模型目录路径
+    """
+    models_dir = get_project_root() / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    return models_dir
+
+
+# =============================================================================
 # FFmpeg 路径检测
 # =============================================================================
 
@@ -425,7 +455,12 @@ def main() -> int:
     logger.info("[4/5] 加载模型并转录...")
 
     # 【初始化转录器】
-    transcriber = WhisperTranscriber(model_name=args.model)
+    # 指定模型下载目录为项目根目录下的 models/ 文件夹
+    models_dir = get_models_dir()
+    transcriber = WhisperTranscriber(
+        model_name=args.model,
+        download_root=str(models_dir)
+    )
 
     # 【存储转录结果】
     transcribe_result: Optional[Dict[str, Any]] = None
