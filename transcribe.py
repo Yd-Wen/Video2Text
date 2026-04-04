@@ -192,6 +192,12 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--simplified-chinese",
+        action="store_true",
+        help="强制使用简体中文输出（针对中文语音）"
+    )
+
+    parser.add_argument(
         "--model", "-m",
         type=str,
         default=DEFAULT_MODEL,
@@ -477,7 +483,8 @@ def main() -> int:
         transcribe_result = transcriber.transcribe(
             temp_audio_path,
             language=language,
-            ffmpeg_path=args.ffmpeg_path
+            ffmpeg_path=args.ffmpeg_path,
+            simplified_chinese=args.simplified_chinese
         )
 
         # 【显示转录统计】

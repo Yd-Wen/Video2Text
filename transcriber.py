@@ -258,6 +258,7 @@ class WhisperTranscriber:
         language: Optional[str] = None,
         task: str = "transcribe",
         ffmpeg_path: Optional[str] = None,
+        simplified_chinese: bool = False,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -352,6 +353,22 @@ class WhisperTranscriber:
         else:
             logger.info("语言: 自动检测")
 
+        # 【中文简体优化】
+        # Whisper 默认倾向输出繁体中文，使用 initial_prompt 引导简体中文输出
+        transcribe_options = kwargs.copy()
+        if "initial_prompt" not in transcribe_options:
+            if simplified_chinese or language == "zh":
+                # 使用更强的提示来强制简体中文输出
+                transcribe_options["initial_prompt"] = (
+                    "以下是普通话的句子。这是一段使用简体中文的转录。"
+                    "请确保所有汉字都是简体字，例如：的、了、是、我、你、他、这、那。"
+                )
+                logger.info("使用简体中文优化")
+            elif language is None:
+                # 自动检测模式，给出一个通用提示
+                transcribe_options["initial_prompt"] = "这是一段中文语音。"
+                logger.debug("使用自动检测语言提示")
+
         try:
             # 【执行转录】
             # 这是核心 Whisper API 调用
@@ -362,7 +379,7 @@ class WhisperTranscriber:
                 task=task,
                 fp16=use_fp16,
                 verbose=False,  # 使用我们的日志系统
-                **kwargs
+                **transcribe_options
             )
 
             # 【标准化结果格式】
