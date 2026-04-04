@@ -3,7 +3,9 @@
     "allow": [
       "Bash(mkdir -p .plan)",
       "Bash(mkdir .plan)",
-      "Bash(python -m py_compile transcribe.py audio_extractor.py transcriber.py output_writer.py utils.py)"
+      "Bash(python -m py_compile transcribe.py audio_extractor.py transcriber.py output_writer.py utils.py)",
+      "Bash(python -m py_compile transcribe.py)",
+      "Bash(python:*)"
     ]
   }
 }

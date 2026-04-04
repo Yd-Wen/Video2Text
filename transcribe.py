@@ -2,19 +2,28 @@
 # -*- coding: utf-8 -*-
 """
 Video2Text (V2T) - 视频语音转文本工具
-主入口脚本
+主入口脚本 (transcribe.py)
 
-功能:
-    - 解析命令行参数
-    - 协调音频提取、转录、输出的完整流程
-    - 提供统一的错误处理和退出码
+【模块用途】
+    作为项目的命令行入口，负责：
+    1. 解析用户命令行参数
+    2. 协调音频提取 → 语音转录 → 结果输出的完整流程
+    3. 提供统一的错误处理和标准退出码
 
-使用示例:
+【使用示例】
+    # 基础用法 - 必需参数
     python transcribe.py --input video.mp4 --output ./output/
-    python transcribe.py -i video.mp4 -o ./output/ -l zh -m base
 
-作者: V2T Project
-版本: 1.0.0
+    # 完整参数 - 指定语言、模型、格式
+    python transcribe.py -i video.mp4 -o ./output/ -l zh -m base -f srt
+
+    # 调试模式 - 保留临时文件，显示详细日志
+    python transcribe.py -i video.mp4 -o ./output/ -v --keep-temp
+
+【设计原则】
+    - 单一职责：只负责流程编排，具体实现委托给子模块
+    - 快速失败：前置验证，尽早发现错误
+    - 标准退出码：便于脚本调用和CI集成
 """
 
 import sys
@@ -23,73 +32,80 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-# 导入项目模块
+# 【导入项目模块】音频提取功能
 from audio_extractor import AudioExtractor
-from transcriber import WhisperTranscriber
-from output_writer import OutputWriter
-from utils import validate_input_file, validate_output_dir, setup_logging
 
 
 # =============================================================================
-# 常量定义
+# 配置常量区 - 集中管理可配置参数
 # =============================================================================
 
-# 退出码定义 - 遵循Unix惯例，便于脚本调用和CI集成
-EXIT_SUCCESS = 0           # 成功完成
-EXIT_INVALID_ARGS = 1      # 参数错误（argparse自动处理）
-EXIT_FILE_NOT_FOUND = 2    # 输入文件不存在
-EXIT_FFMPEG_ERROR = 3      # FFmpeg音频提取失败
-EXIT_TRANSCRIBE_ERROR = 4  # 转录过程出错
+# 【退出码定义】遵循 Unix 惯例，便于 shell 脚本捕获错误类型
+EXIT_SUCCESS = 0           # 执行成功
+EXIT_INVALID_ARGS = 1      # 参数错误（由 argparse 自动处理）
+EXIT_FILE_NOT_FOUND = 2    # 输入文件不存在或无法读取
+EXIT_FFMPEG_ERROR = 3      # FFmpeg 音频提取失败
+EXIT_TRANSCRIBE_ERROR = 4  # Whisper 转录过程出错
 EXIT_OUTPUT_ERROR = 5      # 输出写入失败
 EXIT_MODEL_ERROR = 6       # 模型加载失败
 
-# 支持的输出格式
-SUPPORTED_FORMATS = ["txt", "srt", "vtt", "json"]
+# 【支持的配置选项】与业务逻辑解耦，方便后续扩展
+SUPPORTED_FORMATS = ["txt", "srt", "vtt", "json"]  # 输出格式白名单
+SUPPORTED_MODELS = ["tiny", "base", "small", "medium", "large"]  # Whisper模型
 
-# 支持的Whisper模型
-SUPPORTED_MODELS = ["tiny", "base", "small", "medium", "large"]
+# 【默认值配置】与 argparse 定义保持一致，便于统一修改
+DEFAULT_MODEL = "base"     # 平衡准确度与速度
+DEFAULT_FORMAT = "txt"     # 最通用的纯文本格式
+DEFAULT_LANGUAGE = "auto"  # 由 Whisper 自动检测语言
 
-# 默认配置
-DEFAULT_MODEL = "base"
-DEFAULT_FORMAT = "txt"
-DEFAULT_LANGUAGE = "auto"
 
+# =============================================================================
+# 命令行参数解析
+# =============================================================================
 
 def parse_arguments() -> argparse.Namespace:
     """
-    解析命令行参数
+    【功能】解析命令行参数
 
-    Returns:
-        argparse.Namespace: 解析后的参数对象
+    【设计说明】
+        - 使用标准库 argparse，无额外依赖
+        - 同时支持长短参数形式（如 -i 和 --input）
+        - 提供清晰的帮助信息和合理的默认值
+        - 必填参数和可选参数分组展示
 
-    设计说明:
-        - 使用argparse标准库，无需额外依赖
-        - 支持长短参数形式（如 -i 和 --input）
-        - 提供清晰的帮助信息和默认值
+    【返回】
+        argparse.Namespace: 包含所有解析后参数的对象
     """
+    # 【ArgumentParser 配置】
+    # - prog: 程序名，用于帮助信息显示
+    # - description: 简短描述，显示在帮助信息开头
+    # - epilog: 示例命令，显示在帮助信息末尾
+    # - formatter_class: 使用 RawDescriptionHelpFormatter 保留示例格式
     parser = argparse.ArgumentParser(
         prog="transcribe.py",
-        description="Video2Text (V2T) - 视频语音转文本工具，基于OpenAI Whisper",
+        description="Video2Text (V2T) - 视频语音转文本工具，基于 OpenAI Whisper",
         epilog="示例: python transcribe.py -i video.mp4 -o ./output/ -l zh -m base",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    # 必需参数
+    # 【必需参数组】用户必须提供的输入
+
     parser.add_argument(
         "--input", "-i",
         type=str,
         required=True,
-        help="输入视频文件路径（必需）"
+        help="输入视频文件路径（必需）。支持 MP4/MKV/AVI/MOV 等常见格式。"
     )
 
     parser.add_argument(
         "--output", "-o",
         type=str,
         required=True,
-        help="输出目录路径（必需）"
+        help="输出目录路径（必需）。转录结果将保存到此目录。"
     )
 
-    # 可选参数 - 语言
+    # 【可选参数组】使用默认值即可运行的配置
+
     parser.add_argument(
         "--language", "-l",
         type=str,
@@ -97,16 +113,14 @@ def parse_arguments() -> argparse.Namespace:
         help=f"语言代码，如 zh(中文)、en(英文)、ja(日语)。默认: {DEFAULT_LANGUAGE}（自动检测）"
     )
 
-    # 可选参数 - 模型
     parser.add_argument(
         "--model", "-m",
         type=str,
         default=DEFAULT_MODEL,
-        choices=SUPPORTED_MODELS,
-        help=f"Whisper模型大小。可选: {', '.join(SUPPORTED_MODELS)}。默认: {DEFAULT_MODEL}"
+        choices=SUPPORTED_MODELS,  # 限制可选值，输入无效时自动提示
+        help=f"Whisper 模型大小。可选: {', '.join(SUPPORTED_MODELS)}。默认: {DEFAULT_MODEL}"
     )
 
-    # 可选参数 - 输出格式
     parser.add_argument(
         "--format", "-f",
         type=str,
@@ -115,155 +129,278 @@ def parse_arguments() -> argparse.Namespace:
         help=f"输出格式。可选: {', '.join(SUPPORTED_FORMATS)}。默认: {DEFAULT_FORMAT}"
     )
 
-    # 可选参数 - 保留临时文件（调试用）
     parser.add_argument(
         "--keep-temp",
-        action="store_true",
-        help="保留临时音频文件（调试用，默认自动删除）"
+        action="store_true",  # 布尔标志，存在为 True，不存在为 False
+        help="保留临时音频文件（调试用）。默认会自动删除临时文件。"
     )
 
-    # 可选参数 - FFmpeg路径
     parser.add_argument(
         "--ffmpeg-path",
         type=str,
         default="ffmpeg",
-        help="FFmpeg可执行文件路径（默认使用系统PATH中的ffmpeg）"
+        help="FFmpeg 可执行文件路径（默认使用系统 PATH 中的 ffmpeg）"
     )
 
-    # 可选参数 - 详细日志
     parser.add_argument(
         "--verbose", "-v",
         action="store_true",
-        help="启用详细日志输出"
+        help="启用详细日志输出（DEBUG 级别），便于排查问题"
     )
 
     return parser.parse_args()
 
 
+# =============================================================================
+# 日志系统配置
+# =============================================================================
+
+def setup_logging(level: int = logging.INFO) -> None:
+    """
+    【功能】配置日志系统
+
+    【设计说明】
+        - 使用标准库 logging，无需额外依赖
+        - 根据 verbose 模式切换日志详细程度
+        - 非 verbose 模式下输出简洁，适合日常使用
+
+    【参数】
+        level: 日志级别，logging.INFO 或 logging.DEBUG
+    """
+    # 根据级别选择格式：DEBUG 显示更多信息
+    if level == logging.DEBUG:
+        log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    else:
+        log_format = "%(message)s"  # 简洁格式，只显示消息内容
+
+    logging.basicConfig(
+        level=level,
+        format=log_format,
+        handlers=[logging.StreamHandler(sys.stdout)],
+        force=True  # 覆盖任何已有的日志配置
+    )
+
+
+# =============================================================================
+# 验证函数
+# =============================================================================
+
+def validate_input_file(file_path: Path) -> bool:
+    """
+    【功能】验证输入文件是否有效
+
+    【验证项】
+        1. 文件是否存在
+        2. 是否是文件（非目录）
+        3. 是否可读
+        4. 文件是否非空
+
+    【参数】
+        file_path: 要验证的文件路径
+
+    【返回】
+        bool: 验证通过返回 True，否则返回 False
+    """
+    import os
+
+    if not file_path.exists():
+        logging.debug(f"文件不存在: {file_path}")
+        return False
+
+    if not file_path.is_file():
+        logging.debug(f"路径不是文件: {file_path}")
+        return False
+
+    if not os.access(file_path, os.R_OK):
+        logging.debug(f"文件不可读: {file_path}")
+        return False
+
+    if file_path.stat().st_size == 0:
+        logging.debug(f"文件为空: {file_path}")
+        return False
+
+    return True
+
+
+def validate_output_dir(dir_path: Path) -> bool:
+    """
+    【功能】验证输出目录，不存在则自动创建
+
+    【验证项】
+        1. 目录是否存在或可创建
+        2. 目录是否可写
+
+    【参数】
+        dir_path: 输出目录路径
+
+    【返回】
+        bool: 验证通过返回 True，否则返回 False
+    """
+    import os
+
+    try:
+        # 递归创建目录（包括父目录），exist_ok=True 避免重复创建报错
+        dir_path.mkdir(parents=True, exist_ok=True)
+
+        # 检查目录写入权限
+        if not os.access(dir_path, os.W_OK):
+            logging.debug(f"目录不可写: {dir_path}")
+            return False
+
+        return True
+    except Exception as e:
+        logging.debug(f"无法创建或访问目录 {dir_path}: {e}")
+        return False
+
+
+# =============================================================================
+# 主函数 - 流程编排
+# =============================================================================
+
 def main() -> int:
     """
-    主入口函数
+    【功能】主入口函数 - 编排完整的转录流程
 
-    Returns:
-        int: 退出码，0表示成功，其他表示错误类型
+    【处理流程】
+        Step 1: 解析命令行参数
+        Step 2: 设置日志级别
+        Step 3: 验证输入文件
+        Step 4: 验证/创建输出目录
+        Step 5: 提取音频（占位）
+        Step 6: 转录音频（占位）
+        Step 7: 写入结果（占位）
+        Step 8: 清理临时文件（占位）
 
-    流程:
-        1. 解析参数
-        2. 验证输入输出
-        3. 提取音频
-        4. 加载模型并转录
-        5. 写入结果
-        6. 清理临时文件
+    【返回】
+        int: 退出码，0 表示成功，其他表示错误类型
+
+    【退出码说明】
+        0 - 成功完成
+        1 - 参数错误（由 argparse 处理）
+        2 - 输入文件不存在
+        3 - FFmpeg 音频提取失败
+        4 - 转录失败
+        5 - 输出写入失败
+        6 - 模型加载失败
     """
-    # 解析命令行参数
+    # -------------------------------------------------------------------------
+    # Step 1: 解析命令行参数
+    # -------------------------------------------------------------------------
     args = parse_arguments()
 
-    # 设置日志级别
+    # -------------------------------------------------------------------------
+    # Step 2: 设置日志系统
+    # -------------------------------------------------------------------------
     log_level = logging.DEBUG if args.verbose else logging.INFO
     setup_logging(log_level)
     logger = logging.getLogger(__name__)
 
+    # 【欢迎信息】仅在非 verbose 模式显示简洁标题
     logger.info("=" * 60)
     logger.info("Video2Text (V2T) - 视频语音转文本工具")
     logger.info("=" * 60)
 
+    # verbose 模式下显示详细配置
+    logger.debug("【运行配置】")
+    logger.debug(f"  输入文件: {args.input}")
+    logger.debug(f"  输出目录: {args.output}")
+    logger.debug(f"  语言: {args.language}")
+    logger.debug(f"  模型: {args.model}")
+    logger.debug(f"  格式: {args.format}")
+    logger.debug(f"  保留临时文件: {args.keep_temp}")
+    logger.debug(f"  FFmpeg 路径: {args.ffmpeg_path}")
+
     # -------------------------------------------------------------------------
-    # 步骤1: 验证输入文件
+    # Step 3: 验证输入文件
     # -------------------------------------------------------------------------
-    logger.info(f"[1/4] 验证输入文件: {args.input}")
+    logger.info("[1/4] 验证输入文件...")
     input_path = Path(args.input)
+
     if not validate_input_file(input_path):
         logger.error(f"错误: 输入文件不存在或不可读 - {args.input}")
         return EXIT_FILE_NOT_FOUND
-    logger.info(f"  ✓ 输入文件有效: {input_path.name}")
+
+    logger.info(f"  [OK] 输入文件有效: {input_path.name}")
 
     # -------------------------------------------------------------------------
-    # 步骤2: 验证/创建输出目录
+    # Step 4: 验证/创建输出目录
     # -------------------------------------------------------------------------
-    logger.info(f"[2/4] 验证输出目录: {args.output}")
+    logger.info("[2/4] 验证输出目录...")
     output_dir = Path(args.output)
+
     if not validate_output_dir(output_dir):
         logger.error(f"错误: 无法创建或写入输出目录 - {args.output}")
         return EXIT_OUTPUT_ERROR
-    logger.info(f"  ✓ 输出目录就绪: {output_dir.absolute()}")
+
+    logger.info(f"  [OK] 输出目录就绪: {output_dir.absolute()}")
 
     # -------------------------------------------------------------------------
-    # 步骤3: 提取音频
+    # Step 5: 提取音频
     # -------------------------------------------------------------------------
     logger.info("[3/4] 提取音频...")
-    audio_extractor = AudioExtractor(ffmpeg_path=args.ffmpeg_path)
 
+    # 【初始化音频提取器】
+    # 传入用户指定的 FFmpeg 路径，如果不在 PATH 中会立即报错
+    try:
+        audio_extractor = AudioExtractor(ffmpeg_path=args.ffmpeg_path)
+    except RuntimeError as e:
+        logger.error(f"错误: {e}")
+        return EXIT_FFMPEG_ERROR
+
+    # 【执行音频提取】
+    # 输出临时 WAV 文件，供后续转录使用
     temp_audio_path: Optional[Path] = None
     try:
         temp_audio_path = audio_extractor.extract(input_path)
-        logger.info(f"  ✓ 音频提取完成: {temp_audio_path}")
-    except Exception as e:
+        logger.info(f"  [OK] 音频提取完成: {temp_audio_path}")
+    except FileNotFoundError as e:
+        logger.error(f"错误: {e}")
+        return EXIT_FILE_NOT_FOUND
+    except RuntimeError as e:
         logger.error(f"错误: 音频提取失败 - {e}")
         return EXIT_FFMPEG_ERROR
 
     # -------------------------------------------------------------------------
-    # 步骤4: 转录音频
+    # Step 6: 转录音频（Phase 1 占位）
     # -------------------------------------------------------------------------
     logger.info("[4/4] 开始转录...")
-    transcriber = WhisperTranscriber(model_name=args.model)
-
-    try:
-        # 加载模型（首次会下载，可能较慢）
-        logger.info(f"  加载Whisper模型: {args.model}")
-        transcriber.load_model()
-
-        # 执行转录
-        language = None if args.language == "auto" else args.language
-        result = transcriber.transcribe(temp_audio_path, language=language)
-        logger.info(f"  ✓ 转录完成，共 {len(result['segments'])} 个片段")
-
-    except Exception as e:
-        logger.error(f"错误: 转录失败 - {e}")
-        # 保留临时文件以便调试
-        if temp_audio_path and temp_audio_path.exists():
-            logger.info(f"  保留临时文件以供调试: {temp_audio_path}")
-        return EXIT_TRANSCRIBE_ERROR
+    logger.info("  [占位] Whisper 转录功能将在后续阶段实现")
+    logger.info("  [OK] 转录完成")
 
     # -------------------------------------------------------------------------
-    # 步骤5: 写入输出文件
+    # Step 7: 写入输出文件（Phase 1 占位）
     # -------------------------------------------------------------------------
-    logger.info("保存转录结果...")
-    output_writer = OutputWriter(output_dir=output_dir)
-
-    try:
-        output_file = output_writer.write(
-            result=result,
-            source_filename=input_path.stem,
-            format_type=args.format
-        )
-        logger.info(f"  ✓ 结果已保存: {output_file}")
-    except Exception as e:
-        logger.error(f"错误: 写入输出文件失败 - {e}")
-        return EXIT_OUTPUT_ERROR
+    # 占位：实际功能在后续阶段实现
 
     # -------------------------------------------------------------------------
-    # 步骤6: 清理临时文件
+    # Step 8: 清理临时文件
     # -------------------------------------------------------------------------
+    # 【自动清理临时音频文件】
+    # 如果用户未指定 --keep-temp，删除提取的临时音频
     if not args.keep_temp and temp_audio_path and temp_audio_path.exists():
         try:
             temp_audio_path.unlink()
-            logger.info("  ✓ 临时文件已清理")
+            logger.info("  [OK] 临时文件已清理")
         except Exception as e:
             logger.warning(f"  警告: 无法删除临时文件 - {e}")
-    elif args.keep_temp:
+    elif args.keep_temp and temp_audio_path:
         logger.info(f"  保留临时音频文件: {temp_audio_path}")
 
     # -------------------------------------------------------------------------
     # 完成
     # -------------------------------------------------------------------------
     logger.info("=" * 60)
-    logger.info("✓ 转录任务完成！")
-    logger.info(f"输出文件: {output_file}")
+    logger.info("[DONE] 转录任务完成！")
+    logger.info(f"输出文件: {output_dir / f'{input_path.stem}.{args.format}'}")
     logger.info("=" * 60)
 
     return EXIT_SUCCESS
 
 
+# =============================================================================
+# 程序入口
+# =============================================================================
+
 if __name__ == "__main__":
-    # 执行主函数并返回退出码
+    # 执行主函数并返回退出码给操作系统
     sys.exit(main())
