@@ -30,10 +30,12 @@ import sys
 import argparse
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
-# 【导入项目模块】音频提取功能
+# 【导入项目模块】
 from audio_extractor import AudioExtractor
+from transcriber import WhisperTranscriber
+from output_writer import OutputWriter
 
 
 # =============================================================================
@@ -313,7 +315,7 @@ def main() -> int:
     # -------------------------------------------------------------------------
     # Step 3: 验证输入文件
     # -------------------------------------------------------------------------
-    logger.info("[1/4] 验证输入文件...")
+    logger.info("[1/5] 验证输入文件...")
     input_path = Path(args.input)
 
     if not validate_input_file(input_path):
@@ -325,7 +327,7 @@ def main() -> int:
     # -------------------------------------------------------------------------
     # Step 4: 验证/创建输出目录
     # -------------------------------------------------------------------------
-    logger.info("[2/4] 验证输出目录...")
+    logger.info("[2/5] 验证输出目录...")
     output_dir = Path(args.output)
 
     if not validate_output_dir(output_dir):
@@ -337,7 +339,7 @@ def main() -> int:
     # -------------------------------------------------------------------------
     # Step 5: 提取音频
     # -------------------------------------------------------------------------
-    logger.info("[3/4] 提取音频...")
+    logger.info("[3/5] 提取音频...")
 
     # 【初始化音频提取器】
     # 传入用户指定的 FFmpeg 路径，如果不在 PATH 中会立即报错
@@ -361,16 +363,80 @@ def main() -> int:
         return EXIT_FFMPEG_ERROR
 
     # -------------------------------------------------------------------------
-    # Step 6: 转录音频（Phase 1 占位）
+    # Step 6: 转录音频
     # -------------------------------------------------------------------------
-    logger.info("[4/4] 开始转录...")
-    logger.info("  [占位] Whisper 转录功能将在后续阶段实现")
-    logger.info("  [OK] 转录完成")
+    logger.info("[4/5] 加载模型并转录...")
+
+    # 【初始化转录器】
+    transcriber = WhisperTranscriber(model_name=args.model)
+
+    # 【存储转录结果】
+    transcribe_result: Optional[Dict[str, Any]] = None
+
+    try:
+        # 【加载模型】
+        # 首次加载会下载模型（如果需要），显示模型大小信息
+        logger.info(f"  加载 Whisper 模型: {args.model}")
+        transcriber.load_model()
+
+        # 【执行转录】
+        # language=None 表示自动检测，否则使用用户指定的语言
+        language = None if args.language == "auto" else args.language
+        transcribe_result = transcriber.transcribe(
+            temp_audio_path,
+            language=language
+        )
+
+        # 【显示转录统计】
+        num_segments = len(transcribe_result["segments"])
+        detected_lang = transcribe_result["language"]
+        logger.info(f"  [OK] 转录完成")
+        logger.info(f"    检测到语言: {detected_lang}")
+        logger.info(f"    段落数: {num_segments}")
+
+        # 【verbose 模式显示文本预览】
+        if args.verbose:
+            preview_text = transcribe_result["text"][:200]
+            if len(transcribe_result["text"]) > 200:
+                preview_text += "..."
+            logger.debug(f"  文本预览: {preview_text}")
+
+    except RuntimeError as e:
+        logger.error(f"错误: 转录失败 - {e}")
+        # 【保留临时文件以便调试】
+        if temp_audio_path and temp_audio_path.exists():
+            logger.info(f"  保留临时文件以供调试: {temp_audio_path}")
+        return EXIT_TRANSCRIBE_ERROR
+    except Exception as e:
+        logger.error(f"错误: 未知转录错误 - {e}")
+        if temp_audio_path and temp_audio_path.exists():
+            logger.info(f"  保留临时文件以供调试: {temp_audio_path}")
+        return EXIT_TRANSCRIBE_ERROR
 
     # -------------------------------------------------------------------------
-    # Step 7: 写入输出文件（Phase 1 占位）
+    # Step 7: 写入输出文件
     # -------------------------------------------------------------------------
-    # 占位：实际功能在后续阶段实现
+    logger.info("[5/5] 保存转录结果...")
+
+    # 【初始化输出写入器】
+    output_writer = OutputWriter(output_dir=output_dir)
+
+    try:
+        # 【执行写入】
+        output_file = output_writer.write(
+            result=transcribe_result,
+            source_filename=input_path.name,
+            format_type=args.format
+        )
+
+        logger.info(f"  [OK] 结果已保存: {output_file}")
+
+    except ValueError as e:
+        logger.error(f"错误: 输出格式无效 - {e}")
+        return EXIT_OUTPUT_ERROR
+    except IOError as e:
+        logger.error(f"错误: 写入输出文件失败 - {e}")
+        return EXIT_OUTPUT_ERROR
 
     # -------------------------------------------------------------------------
     # Step 8: 清理临时文件
@@ -391,7 +457,7 @@ def main() -> int:
     # -------------------------------------------------------------------------
     logger.info("=" * 60)
     logger.info("[DONE] 转录任务完成！")
-    logger.info(f"输出文件: {output_dir / f'{input_path.stem}.{args.format}'}")
+    logger.info(f"输出文件: {output_file}")
     logger.info("=" * 60)
 
     return EXIT_SUCCESS

@@ -1,49 +1,86 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Whisper转录模块
+Video2Text (V2T) - Whisper 转录模块 (transcriber.py)
 
-功能:
-    - 加载和管理Whisper模型
-    - 执行语音识别转录
-    - 支持多语言和自动语言检测
+【模块用途】
+    负责加载 OpenAI Whisper 模型并执行语音识别转录。
 
-设计说明:
-    - 延迟加载模型（首次使用时下载和加载）
-    - 模型缓存于 ~/.cache/whisper/ 目录
-    - 支持CPU运行（无需GPU）
+    核心功能：
+    1. 自动下载和缓存 Whisper 模型
+    2. 加载模型到内存（支持 CPU/GPU）
+    3. 执行音频文件转录
+    4. 支持多语言和自动语言检测
+    5. 标准化转录结果格式
+
+【技术说明】
+    - 使用 openai-whisper 官方库
+    - 模型首次加载时自动下载到 ~/.cache/whisper/
+    - 支持 5 种模型规模：tiny/base/small/medium/large
+    - CPU 运行使用 fp16=False 提升稳定性
+
+【模型信息】
+    | 模型    | 大小   | 速度     | 准确度 | 适用场景       |
+    |---------|--------|----------|--------|----------------|
+    | tiny    | 39 MB  | 最快     | 一般   | 快速测试       |
+    | base    | 74 MB  | 快       | 良好   | 日常使用（默认）|
+    | small   | 244 MB | 中等     | 较好   | 质量优先       |
+    | medium  | 769 MB | 较慢     | 好     | 高质量要求     |
+    | large   | 1550 MB| 最慢     | 最好   | 专业用途       |
+
+【依赖要求】
+    - Python: openai-whisper, torch, numpy
+    - 模型文件：自动下载，首次使用需网络连接
+
+【使用示例】
+    from transcriber import WhisperTranscriber
+
+    # 创建转录器实例
+    transcriber = WhisperTranscriber(model_name="base")
+
+    # 加载模型（首次会下载）
+    transcriber.load_model()
+
+    # 执行转录
+    result = transcriber.transcribe(Path("audio.wav"), language="zh")
+
+    # 使用结果
+    print(result["text"])           # 完整文本
+    for seg in result["segments"]:  # 分段信息
+        print(f"[{seg['start']:.2f}] {seg['text']}")
 """
 
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
+# Whisper 核心库
 import whisper
 import numpy as np
 
+# 获取模块级日志记录器
 logger = logging.getLogger(__name__)
 
 
 class WhisperTranscriber:
     """
-    Whisper转录器类
+    【Whisper 转录器类】
 
-    负责加载Whisper模型并执行语音转录。
+    封装 Whisper 模型的加载和转录功能。
 
-    Attributes:
+    【属性】
         model_name (str): 模型名称（tiny/base/small/medium/large）
         model (whisper.Model): 加载后的模型实例
         device (str): 运行设备（cpu/cuda）
+        download_root (Optional[str]): 模型下载目录
 
-    模型大小参考:
-        - tiny:  39MB, 最快, 准确度一般
-        - base:  74MB, 快速, 准确度良好（默认）
-        - small: 244MB, 中等速度, 准确度较好
-        - medium: 769MB, 较慢, 准确度好
-        - large: 1550MB, 最慢, 准确度最佳
+    【设计原则】
+        - 延迟加载：模型在首次 transcribe() 或显式 load_model() 时加载
+        - 自动设备检测：有 GPU 用 GPU，否则 CPU
+        - CPU 优化：自动禁用 fp16 提升稳定性
     """
 
-    # 支持的模型列表
+    # 【支持的模型列表】与 Whisper 官方一致
     SUPPORTED_MODELS = ["tiny", "base", "small", "medium", "large"]
 
     def __init__(
@@ -53,16 +90,30 @@ class WhisperTranscriber:
         download_root: Optional[str] = None
     ):
         """
-        初始化转录器
+        【初始化转录器】
 
-        Args:
-            model_name: 模型名称，默认"base"
-            device: 运行设备，None表示自动选择（有GPU用GPU，否则CPU）
-            download_root: 模型下载目录，默认使用whisper的默认缓存目录
+        【参数】
+            model_name: 模型名称，默认 "base"
+                       可选: tiny, base, small, medium, large
+            device: 运行设备，None 表示自动检测
+                   "cuda" 强制使用 GPU，"cpu" 强制使用 CPU
+            download_root: 模型下载目录，默认使用 Whisper 缓存目录
+                          通常为 ~/.cache/whisper/
 
-        Raises:
+        【异常】
             ValueError: 模型名称不支持
+
+        【示例】
+            # 默认配置
+            transcriber = WhisperTranscriber()
+
+            # 使用 small 模型，强制 CPU
+            transcriber = WhisperTranscriber(
+                model_name="small",
+                device="cpu"
+            )
         """
+        # 【验证模型名称】
         if model_name not in self.SUPPORTED_MODELS:
             raise ValueError(
                 f"不支持的模型: {model_name}\n"
@@ -70,47 +121,72 @@ class WhisperTranscriber:
             )
 
         self.model_name = model_name
-        self.device = device or ("cuda" if self._check_cuda() else "cpu")
+        self.device = device or self._auto_select_device()
         self.download_root = download_root
         self.model: Optional[whisper.Whisper] = None
 
-        logger.debug(f"转录器初始化: model={model_name}, device={self.device}")
+        logger.debug(
+            f"转录器初始化: model={model_name}, device={self.device}"
+        )
 
-    def _check_cuda(self) -> bool:
+    def _auto_select_device(self) -> str:
         """
-        检查CUDA是否可用
+        【私有方法】自动选择运行设备
 
-        Returns:
-            bool: True if CUDA is available
+        【逻辑】
+            1. 检查 PyTorch CUDA 是否可用
+            2. 可用返回 "cuda"，否则返回 "cpu"
+
+        【返回】
+            str: "cuda" 或 "cpu"
         """
         try:
             import torch
-            return torch.cuda.is_available()
+            if torch.cuda.is_available():
+                logger.debug("检测到 CUDA，使用 GPU 加速")
+                return "cuda"
         except ImportError:
-            return False
+            pass
+
+        logger.debug("未检测到 CUDA，使用 CPU")
+        return "cpu"
 
     def load_model(self) -> None:
         """
-        加载Whisper模型
+        【加载 Whisper 模型】
 
-        说明:
-            - 首次加载时会自动下载模型文件
-            - 模型缓存于 ~/.cache/whisper/ 目录
-            - 下载进度会显示在终端
+        【功能】
+            - 下载模型（如果本地不存在）
+            - 加载模型到指定设备（CPU/GPU）
+            - 首次下载可能需要几分钟，取决于网络速度
 
-        Raises:
+        【模型缓存位置】
+            - Linux/macOS: ~/.cache/whisper/
+            - Windows: %USERPROFILE%\.cache\whisper\
+
+        【异常】
             RuntimeError: 模型加载失败
+
+        【注意】
+            - 此方法可重复调用，模型已加载时会跳过
+            - 模型加载后会占用内存（base 模型约 150MB）
         """
+        # 【避免重复加载】
         if self.model is not None:
             logger.debug("模型已加载，跳过")
             return
 
-        logger.info(f"正在加载Whisper模型: {self.model_name}")
+        logger.info(f"正在加载 Whisper 模型: {self.model_name}")
         logger.info(f"设备: {self.device}")
 
+        # 【显示模型大小提示】
+        model_size_mb = self.estimate_model_size(self.model_name)
+        if model_size_mb > 0:
+            logger.info(f"模型大小约: {model_size_mb} MB")
+
         try:
-            # 加载模型
-            # fp16=False 在CPU上更稳定，虽然速度稍慢
+            # 【加载模型】
+            # download_root: 指定模型下载/缓存目录
             self.model = whisper.load_model(
                 self.model_name,
                 device=self.device,
@@ -130,57 +206,96 @@ class WhisperTranscriber:
         **kwargs
     ) -> Dict[str, Any]:
         """
-        转录音频文件
+        【转录音频文件】
 
-        Args:
-            audio_path: 音频文件路径（WAV格式）
-            language: 语言代码，如"zh", "en", "ja"等。None表示自动检测
-            task: 任务类型，"transcribe"（转录）或"translate"（翻译成英文）
-            **kwargs: 额外的转录参数传递给whisper
+        【功能】
+            使用 Whisper 模型将音频转换为文本。
 
-        Returns:
-            dict: 转录结果，包含以下关键字段:
+        【参数】
+            audio_path: 音频文件路径（WAV 格式最佳）
+            language: 语言代码，如 "zh", "en", "ja"
+                     None 表示自动检测语言
+            task: 任务类型
+                 "transcribe" - 转录原语言（默认）
+                 "translate"  - 翻译成英文
+            **kwargs: 额外参数传递给 whisper.transcribe()
+                     如: temperature, best_of, beam_size 等
+
+        【返回】
+            dict: 标准化后的转录结果，包含：
                 - text: 完整转录文本
-                - segments: 段落列表，每个包含:
-                    - id: 段落ID
+                - language: 检测到的语言代码
+                - segments: 段落列表，每个段落包含:
+                    - id: 段落序号
                     - start: 开始时间（秒）
                     - end: 结束时间（秒）
                     - text: 段落文本
                     - confidence: 置信度（avg_logprob）
-                - language: 检测到的语言代码
 
-        Raises:
+        【异常】
             RuntimeError: 转录失败
             FileNotFoundError: 音频文件不存在
+
+        【示例】
+            # 自动检测语言
+            result = transcriber.transcribe(Path("audio.wav"))
+
+            # 指定中文
+            result = transcriber.transcribe(
+                Path("audio.wav"),
+                language="zh"
+            )
+
+            # 高级选项
+            result = transcriber.transcribe(
+                Path("audio.wav"),
+                language="en",
+                temperature=0.0,
+                beam_size=5
+            )
         """
         audio_path = Path(audio_path)
 
+        # 【前置验证】
         if not audio_path.exists():
             raise FileNotFoundError(f"音频文件不存在: {audio_path}")
 
-        # 确保模型已加载
+        # 【确保模型已加载】
         if self.model is None:
             self.load_model()
 
         logger.info(f"开始转录: {audio_path.name}")
 
+        # 【准备转录参数】
+        # fp16: 半精度浮点，GPU 可用，CPU 建议关闭
+        use_fp16 = (self.device == "cuda")
+
+        # 【显示语言设置】
+        if language:
+            logger.info(f"指定语言: {language}")
+        else:
+            logger.info("语言: 自动检测")
+
         try:
-            # 执行转录
-            # fp16=False 在CPU上运行更稳定
+            # 【执行转录】
+            # 这是核心 Whisper API 调用
             result = self.model.transcribe(
                 str(audio_path),
                 language=language,
                 task=task,
-                fp16=(self.device == "cuda"),  # 只在GPU上使用fp16
-                verbose=False,  # 我们使用日志系统，禁用whisper的进度输出
+                fp16=use_fp16,
+                verbose=False,  # 使用我们的日志系统
                 **kwargs
             )
 
-            # 标准化结果格式
+            # 【标准化结果格式】
             formatted_result = self._format_result(result)
 
-            logger.info(f"转录完成: 检测到语言={formatted_result['language']}")
-            logger.info(f"  总段落数: {len(formatted_result['segments'])}")
+            # 【输出统计信息】
+            num_segments = len(formatted_result["segments"])
+            detected_lang = formatted_result["language"]
+            logger.info(f"转录完成: 检测到语言={detected_lang}")
+            logger.info(f"  总段落数: {num_segments}")
 
             return formatted_result
 
@@ -189,13 +304,20 @@ class WhisperTranscriber:
 
     def _format_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """
-        标准化转录结果格式
+        【私有方法】标准化转录结果格式
 
-        Args:
-            result: Whisper原始输出
+        【目的】
+            将 Whisper 原始输出转换为统一的内部格式，
+            便于后续处理和输出模块使用。
 
-        Returns:
-            dict: 标准化后的结果
+        【输入格式】
+            Whisper 原始结果包含：
+            - text: 完整文本
+            - language: 检测到的语言
+            - segments: 原始段落列表
+
+        【输出格式】
+            标准化的字典，字段更友好
         """
         formatted = {
             "text": result.get("text", "").strip(),
@@ -203,7 +325,7 @@ class WhisperTranscriber:
             "segments": []
         }
 
-        # 处理段落信息
+        # 【处理每个段落】
         for seg in result.get("segments", []):
             formatted_segment = {
                 "id": seg.get("id", 0),
@@ -218,10 +340,16 @@ class WhisperTranscriber:
 
     def get_model_info(self) -> Dict[str, Any]:
         """
-        获取当前模型信息
+        【获取当前模型信息】
 
-        Returns:
-            dict: 模型信息字典
+        【返回】
+            dict: 包含模型名称、设备、加载状态等信息
+
+        【示例】
+            info = transcriber.get_model_info()
+            print(f"模型: {info['model_name']}")
+            print(f"设备: {info['device']}")
+            print(f"已加载: {info['loaded']}")
         """
         info = {
             "model_name": self.model_name,
@@ -229,11 +357,11 @@ class WhisperTranscriber:
             "loaded": self.model is not None,
         }
 
-        if self.model is not None:
-            # 尝试获取模型维度信息
+        # 【尝试获取模型维度信息】
+        if self.model is not None and hasattr(self.model, 'dims'):
             try:
-                info["dims"] = self.model.dims.__dict__ if hasattr(self.model, 'dims') else None
-            except:
+                info["dims"] = self.model.dims.__dict__
+            except Exception:
                 pass
 
         return info
@@ -241,33 +369,46 @@ class WhisperTranscriber:
     @staticmethod
     def list_supported_languages() -> Dict[str, str]:
         """
-        获取支持的语言列表
+        【静态方法】获取支持的语言列表
 
-        Returns:
+        【返回】
             dict: 语言代码到语言名称的映射
+                  如: {"zh": "chinese", "en": "english", ...}
+
+        【示例】
+            languages = WhisperTranscriber.list_supported_languages()
+            for code, name in sorted(languages.items()):
+                print(f"{code}: {name}")
         """
         return whisper.tokenizer.LANGUAGES
 
     @classmethod
     def get_available_models(cls) -> List[str]:
         """
-        获取可用模型列表
+        【类方法】获取可用模型列表
 
-        Returns:
-            list: 模型名称列表
+        【返回】
+            list: 支持的模型名称列表
+
+        【示例】
+            models = WhisperTranscriber.get_available_models()
+            print(f"可用模型: {', '.join(models)}")
         """
         return cls.SUPPORTED_MODELS.copy()
 
     @classmethod
-    def estimate_model_size(cls, model_name: str) -> float:
+    def estimate_model_size(cls, model_name: str) -> int:
         """
-        估算模型大小
+        【类方法】估算模型大小
 
-        Args:
+        【参数】
             model_name: 模型名称
 
-        Returns:
-            float: 模型大小（MB）
+        【返回】
+            int: 模型大小（MB），未知模型返回 0
+
+        【说明】
+            这是近似值，实际下载大小可能略有差异
         """
         sizes = {
             "tiny": 39,
