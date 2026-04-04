@@ -1,10 +1,12 @@
 # Video2Text (V2T) - 视频语音转文本工具
 
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Whisper](https://img.shields.io/badge/Whisper-OpenAI-orange.svg)](https://github.com/openai/whisper)
+<p align="center">
+  <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.8+-blue.svg" alt="Python"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
+  <a href="https://github.com/openai/whisper"><img src="https://img.shields.io/badge/Whisper-OpenAI-orange.svg" alt="Whisper"></a>
+</p>
 
-> 基于 OpenAI Whisper 的本地视频语音识别工具，支持多种输出格式，纯离线运行，保护隐私。
+<p align="center">基于 OpenAI Whisper 的本地视频语音识别工具，支持多种输出格式，纯离线运行，保护隐私。</p>
 
 ---
 
