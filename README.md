@@ -121,7 +121,28 @@ sudo yum install ffmpeg
 ffmpeg -version
 ```
 
-### 3. 创建虚拟环境
+### 3. 项目内 FFmpeg 配置（推荐）
+
+为了实现项目的独立运行，可以将 FFmpeg 放在项目目录内：
+
+1. 下载 FFmpeg 可执行文件（Windows: `ffmpeg.exe`，Linux/Mac: `ffmpeg`）
+2. 将可执行文件放入项目根目录的 `tools/` 文件夹
+3. 程序会自动检测并使用该 FFmpeg
+
+```
+Video2Text/
+├── tools/
+│   └── ffmpeg.exe      # 放置 FFmpeg 可执行文件
+├── temp/               # 临时文件目录（自动创建）
+└── ...
+```
+
+**优势：**
+- 无需配置系统 PATH
+- 项目可以整体打包移植
+- 避免与系统 FFmpeg 版本冲突
+
+### 4. 创建虚拟环境
 
 ```bash
 # Windows
@@ -133,7 +154,7 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-### 4. 安装 Python 依赖
+### 5. 安装 Python 依赖
 
 ```bash
 pip install -r requirements.txt
@@ -246,6 +267,8 @@ Video2Text/
 ├── README.md               # 项目说明文档
 ├── .gitignore              # Git 忽略配置
 ├── output/                 # 转录结果输出目录（gitignore）
+├── temp/                   # 临时文件目录（gitignore，自动创建）
+├── tools/                  # FFmpeg 存放目录（gitignore，可选）
 └── test.mp4                # 测试视频文件（可选）
 ```
 
@@ -268,8 +291,9 @@ Video2Text/
 **错误:** `RuntimeError: FFmpeg 未找到`
 
 **解决:**
-- 确认 FFmpeg 已安装并添加到系统 PATH
-- 或使用 `--ffmpeg-path` 指定完整路径
+- 方式一：将 FFmpeg 可执行文件放入项目 `tools/` 目录
+- 方式二：将 FFmpeg 安装并添加到系统 PATH
+- 方式三：使用 `--ffmpeg-path` 指定完整路径
 
 ### 2. 模型下载失败
 

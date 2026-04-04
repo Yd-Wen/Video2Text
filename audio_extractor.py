@@ -206,7 +206,11 @@ class AudioExtractor:
             # suffix: 文件扩展名
             # delete=False: 关闭后不自动删除（我们需要在转录后使用）
             # prefix: 文件名前缀，便于识别
+            # dir: 使用项目内临时目录（如果存在）
+            temp_dir = Path(__file__).parent / "temp"
+            temp_dir.mkdir(exist_ok=True)
             temp_file = tempfile.NamedTemporaryFile(
+                dir=temp_dir,
                 suffix=".wav",
                 delete=False,
                 prefix="v2t_audio_"

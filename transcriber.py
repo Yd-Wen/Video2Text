@@ -51,8 +51,9 @@ Video2Text (V2T) - Whisper 转录模块 (transcriber.py)
 """
 
 import logging
+import subprocess
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 
 # Whisper 核心库
 import whisper
@@ -129,6 +130,61 @@ class WhisperTranscriber:
             f"转录器初始化: model={model_name}, device={self.device}"
         )
 
+    def load_audio_with_ffmpeg(
+        self,
+        audio_path: Path,
+        ffmpeg_path: str = "ffmpeg",
+        sr: int = 16000
+    ) -> np.ndarray:
+        """
+        【使用指定 FFmpeg 加载音频】
+
+        【功能】
+            使用指定的 FFmpeg 可执行文件加载音频，转换为 numpy 数组。
+            这样可以让 Whisper 直接处理 numpy 数组，而不需要调用系统 FFmpeg。
+
+        【参数】
+            audio_path: 音频文件路径
+            ffmpeg_path: FFmpeg 可执行文件路径
+            sr: 目标采样率，默认 16000Hz
+
+        【返回】
+            np.ndarray: 音频波形数组，float32 类型，范围 [-1.0, 1.0]
+
+        【异常】
+            RuntimeError: FFmpeg 执行失败
+        """
+        audio_path = Path(audio_path)
+        if not audio_path.exists():
+            raise FileNotFoundError(f"音频文件不存在: {audio_path}")
+
+        cmd = [
+            ffmpeg_path,
+            "-nostdin",
+            "-threads", "0",
+            "-i", str(audio_path),
+            "-f", "s16le",
+            "-ac", "1",
+            "-acodec", "pcm_s16le",
+            "-ar", str(sr),
+            "-"
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                check=True
+            )
+            audio_data = np.frombuffer(result.stdout, np.int16)
+            # 转换为 float32，范围 [-1.0, 1.0]
+            return audio_data.flatten().astype(np.float32) / 32768.0
+        except subprocess.CalledProcessError as e:
+            stderr = e.stderr.decode('utf-8', errors='ignore') if e.stderr else "未知错误"
+            raise RuntimeError(f"FFmpeg 加载音频失败: {stderr}") from e
+        except Exception as e:
+            raise RuntimeError(f"加载音频失败: {e}") from e
+
     def _auto_select_device(self) -> str:
         """
         【私有方法】自动选择运行设备
@@ -200,24 +256,29 @@ class WhisperTranscriber:
 
     def transcribe(
         self,
-        audio_path: Path,
+        audio_input: Union[Path, str, np.ndarray],
         language: Optional[str] = None,
         task: str = "transcribe",
+        ffmpeg_path: Optional[str] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
-        【转录音频文件】
+        【转录音频】
 
         【功能】
             使用 Whisper 模型将音频转换为文本。
 
         【参数】
-            audio_path: 音频文件路径（WAV 格式最佳）
+            audio_input: 音频输入，可以是：
+                        - 文件路径 (Path 或 str)
+                        - numpy 数组 (已加载的音频数据)
             language: 语言代码，如 "zh", "en", "ja"
                      None 表示自动检测语言
             task: 任务类型
                  "transcribe" - 转录原语言（默认）
                  "translate"  - 翻译成英文
+            ffmpeg_path: FFmpeg 可执行文件路径
+                        如果提供且 audio_input 是路径，则使用此 FFmpeg 加载音频
             **kwargs: 额外参数传递给 whisper.transcribe()
                      如: temperature, best_of, beam_size 等
 
@@ -246,25 +307,42 @@ class WhisperTranscriber:
                 language="zh"
             )
 
-            # 高级选项
+            # 使用指定 FFmpeg 路径
             result = transcriber.transcribe(
                 Path("audio.wav"),
-                language="en",
-                temperature=0.0,
-                beam_size=5
+                ffmpeg_path="./tools/ffmpeg.exe"
             )
-        """
-        audio_path = Path(audio_path)
 
-        # 【前置验证】
-        if not audio_path.exists():
-            raise FileNotFoundError(f"音频文件不存在: {audio_path}")
+            # 直接传入 numpy 数组
+            audio_array = transcriber.load_audio_with_ffmpeg(Path("audio.wav"), "./tools/ffmpeg.exe")
+            result = transcriber.transcribe(audio_array)
+        """
+        # 【处理输入类型】
+        if isinstance(audio_input, (Path, str)):
+            # 文件路径 - 需要使用 FFmpeg 加载
+            audio_path = Path(audio_input)
+            if not audio_path.exists():
+                raise FileNotFoundError(f"音频文件不存在: {audio_path}")
+
+            # 如果提供了 ffmpeg_path，使用它加载音频
+            if ffmpeg_path:
+                logger.debug(f"使用指定 FFmpeg 加载音频: {ffmpeg_path}")
+                audio_data = self.load_audio_with_ffmpeg(audio_path, ffmpeg_path)
+            else:
+                # 没有提供 ffmpeg_path，让 Whisper 自己处理（会找系统 PATH）
+                audio_data = str(audio_path)
+
+            logger.info(f"开始转录: {audio_path.name}")
+        elif isinstance(audio_input, np.ndarray):
+            # 已经是 numpy 数组
+            audio_data = audio_input
+            logger.info(f"开始转录: numpy 数组 (长度={len(audio_input)})")
+        else:
+            raise TypeError(f"不支持的音频输入类型: {type(audio_input)}")
 
         # 【确保模型已加载】
         if self.model is None:
             self.load_model()
-
-        logger.info(f"开始转录: {audio_path.name}")
 
         # 【准备转录参数】
         # fp16: 半精度浮点，GPU 可用，CPU 建议关闭
@@ -279,8 +357,9 @@ class WhisperTranscriber:
         try:
             # 【执行转录】
             # 这是核心 Whisper API 调用
+            # audio_data 可以是文件路径(str)或 numpy 数组
             result = self.model.transcribe(
-                str(audio_path),
+                audio_data,
                 language=language,
                 task=task,
                 fp16=use_fp16,

@@ -62,6 +62,52 @@ DEFAULT_LANGUAGE = "auto"  # 由 Whisper 自动检测语言
 
 
 # =============================================================================
+# FFmpeg 路径检测
+# =============================================================================
+
+def get_default_ffmpeg_path() -> str:
+    """
+    【功能】获取默认的 FFmpeg 路径，优先使用项目内 FFmpeg
+
+    【检测顺序】
+        1. 项目根目录的 tools/ffmpeg.exe (Windows) 或 tools/ffmpeg (Linux/Mac)
+        2. 回退到系统 PATH 中的 ffmpeg
+
+    【返回】
+        str: FFmpeg 可执行文件路径
+    """
+    project_dir = Path(__file__).parent
+    tools_dir = project_dir / "tools"
+
+    # 确定可执行文件名
+    ffmpeg_exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+    project_ffmpeg = tools_dir / ffmpeg_exe
+
+    if project_ffmpeg.exists():
+        return str(project_ffmpeg)
+
+    # 回退到系统 PATH
+    return "ffmpeg"
+
+
+def cleanup_temp_files() -> None:
+    """
+    【功能】清理项目临时目录中的残留文件
+
+    【用途】
+        在程序启动时调用，清理上次运行残留的临时音频文件。
+        避免因程序异常退出导致的临时文件堆积。
+    """
+    temp_dir = Path(__file__).parent / "temp"
+    if temp_dir.exists():
+        for f in temp_dir.glob("v2t_audio_*.wav"):
+            try:
+                f.unlink()
+            except Exception:
+                pass  # 静默忽略删除失败
+
+
+# =============================================================================
 # 命令行参数解析
 # =============================================================================
 
@@ -140,8 +186,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--ffmpeg-path",
         type=str,
-        default="ffmpeg",
-        help="FFmpeg 可执行文件路径（默认使用系统 PATH 中的 ffmpeg）"
+        default=None,
+        help="FFmpeg 可执行文件路径（默认优先使用项目 tools/ 目录下的 ffmpeg）"
     )
 
     parser.add_argument(
@@ -286,6 +332,12 @@ def main() -> int:
         6 - 模型加载失败
     """
     # -------------------------------------------------------------------------
+    # Step 0: 启动清理
+    # -------------------------------------------------------------------------
+    # 清理上次运行残留的临时文件
+    cleanup_temp_files()
+
+    # -------------------------------------------------------------------------
     # Step 1: 解析命令行参数
     # -------------------------------------------------------------------------
     args = parse_arguments()
@@ -296,6 +348,11 @@ def main() -> int:
     log_level = logging.DEBUG if args.verbose else logging.INFO
     setup_logging(log_level)
     logger = logging.getLogger(__name__)
+
+    # 【处理 FFmpeg 路径】
+    # 如果用户未指定，使用自动检测的默认路径
+    if args.ffmpeg_path is None:
+        args.ffmpeg_path = get_default_ffmpeg_path()
 
     # 【欢迎信息】仅在非 verbose 模式显示简洁标题
     logger.info("=" * 60)
@@ -384,7 +441,8 @@ def main() -> int:
         language = None if args.language == "auto" else args.language
         transcribe_result = transcriber.transcribe(
             temp_audio_path,
-            language=language
+            language=language,
+            ffmpeg_path=args.ffmpeg_path
         )
 
         # 【显示转录统计】

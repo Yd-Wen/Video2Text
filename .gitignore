@@ -52,6 +52,9 @@ output/
 # 程序运行时的中间音频文件（即使保留临时文件也不应提交）
 temp/
 tmp/
+
+# 项目本地 FFmpeg
+tools/
 *.wav
 *.mp3
 *.aac
