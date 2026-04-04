@@ -152,3 +152,5 @@ htmlcov/
 *.pem
 *.key
 secrets.json
+
+.claude/settings.local.json

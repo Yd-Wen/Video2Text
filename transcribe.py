@@ -144,6 +144,14 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--device", "-d",
+        type=str,
+        default=None,
+        choices=["cpu", "cuda"],
+        help="运行设备，auto 表示自动检测。可选: cpu, cuda。默认: auto"
+    )
+
+    parser.add_argument(
         "--format", "-f",
         type=str,
         default=DEFAULT_FORMAT,
@@ -237,6 +245,7 @@ def main() -> int:
     logger.debug(f"  输出目录: {args.output}")
     logger.debug(f"  语言: {args.language}")
     logger.debug(f"  模型: {args.model}")
+    logger.debug(f"  设备: {args.device or 'auto'}")
     logger.debug(f"  格式: {args.format}")
     logger.debug(f"  保留临时文件: {args.keep_temp}")
     logger.debug(f"  FFmpeg 路径: {args.ffmpeg_path}")
@@ -301,6 +310,7 @@ def main() -> int:
     models_dir = get_models_dir()
     transcriber = WhisperTranscriber(
         model_name=args.model,
+        device=args.device,
         download_root=str(models_dir)
     )
 

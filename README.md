@@ -206,7 +206,7 @@ python transcribe.py -i movie.mkv -o ./subtitles/ -l en -m small -f srt
 
 **示例 3: 使用指定 FFmpeg 路径**
 ```bash
-python transcribe.py -i video.mp4 -o ./output/ --ffmpeg-path "D:/Dependency/Other/ffmpeg.exe"
+python transcribe.py -i video.mp4 -o ./output/ --ffmpeg-path "your_path/ffmpeg.exe"
 ```
 
 **示例 4: 调试模式（保留临时文件）**
