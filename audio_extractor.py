@@ -236,8 +236,7 @@ class AudioExtractor:
                 ar=self.sample_rate,      # 采样率 (audio rate)
                 ac=self.channels,         # 声道数 (audio channels)
                 sample_fmt=self.REQUIRED_SAMPLE_FMT,  # 采样格式
-                vn=True,                  # 禁用视频输出 (no video)
-                y=True                    # 覆盖已存在文件 (yes)
+                vn=None                   # 禁用视频输出 (no video)
             )
 
             # Step 3: 执行 FFmpeg 命令
