@@ -55,11 +55,22 @@ tmp/
 
 # 项目本地 FFmpeg
 tools/
+
+# 音频文件
 *.wav
 *.mp3
 *.aac
 *.ogg
 *.m4a
+
+# 视频文件（项目支持的所有格式）
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
 
 # 日志文件
 # 运行时生成的日志
