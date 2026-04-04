@@ -169,14 +169,14 @@ pip install -r requirements.txt
 ### 快速开始
 
 ```bash
-# 基础用法 - 必需参数
-python transcribe.py --input video.mp4 --output ./output/
+# 基础用法 - 只需指定输入文件
+python transcribe.py -i video.mp4
 
-# 完整参数 - 指定语言、模型、格式
+# 完整参数 - 指定输出目录、语言、模型、格式
 python transcribe.py -i video.mp4 -o ./output/ -l zh -m base -f srt
 
 # 调试模式 - 保留临时文件，显示详细日志
-python transcribe.py -i video.mp4 -o ./output/ -v --keep-temp
+python transcribe.py -i video.mp4 -v --keep-temp
 ```
 
 ### 命令行参数
@@ -184,7 +184,7 @@ python transcribe.py -i video.mp4 -o ./output/ -v --keep-temp
 | 参数 | 简写 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `--input` | `-i` | 是 | - | 输入视频文件路径 |
-| `--output` | `-o` | 是 | - | 输出目录路径 |
+| `--output` | `-o` | 否 | output | 输出目录路径 |
 | `--language` | `-l` | 否 | auto | 语言代码（如 zh, en, ja）|
 | `--model` | `-m` | 否 | base | 模型大小（tiny/base/small/medium/large）|
 | `--format` | `-f` | 否 | txt | 输出格式（txt/srt/vtt/json）|

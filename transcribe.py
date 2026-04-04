@@ -178,8 +178,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--output", "-o",
         type=str,
-        required=True,
-        help="输出目录路径（必需）。转录结果将保存到此目录。"
+        default="output",
+        help="输出目录路径。默认: output/"
     )
 
     # 【可选参数组】使用默认值即可运行的配置
