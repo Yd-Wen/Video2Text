@@ -39,13 +39,17 @@ from output_writer import OutputWriter
 
 
 # =============================================================================
-# 从 utils 导入工具函数
+# 从 utils 包导入工具函数
 # =============================================================================
 
 from utils import (
     setup_logging,
     validate_input_file,
     validate_output_dir,
+    cleanup_temp_files,
+    get_project_root,
+    get_models_dir,
+    get_default_ffmpeg_path,
 )
 
 # =============================================================================
@@ -69,82 +73,6 @@ SUPPORTED_MODELS = ["tiny", "base", "small", "medium", "large"]  # Whisper模型
 DEFAULT_MODEL = "base"     # 平衡准确度与速度
 DEFAULT_FORMAT = "txt"     # 最通用的纯文本格式
 DEFAULT_LANGUAGE = "auto"  # 由 Whisper 自动检测语言
-
-
-# =============================================================================
-# 路径配置
-# =============================================================================
-
-def get_project_root() -> Path:
-    """
-    【功能】获取项目根目录
-
-    【返回】
-        Path: 项目根目录路径（即 transcribe.py 所在目录）
-    """
-    return Path(__file__).parent
-
-
-def get_models_dir() -> Path:
-    """
-    【功能】获取模型存放目录
-
-    【说明】
-        模型存放在项目根目录的 models/ 文件夹下，
-        如果不存在会自动创建。
-
-    【返回】
-        Path: 模型目录路径
-    """
-    models_dir = get_project_root() / "models"
-    models_dir.mkdir(parents=True, exist_ok=True)
-    return models_dir
-
-
-# =============================================================================
-# FFmpeg 路径检测
-# =============================================================================
-
-def get_default_ffmpeg_path() -> str:
-    """
-    【功能】获取默认的 FFmpeg 路径，优先使用项目内 FFmpeg
-
-    【检测顺序】
-        1. 项目根目录的 tools/ffmpeg.exe (Windows) 或 tools/ffmpeg (Linux/Mac)
-        2. 回退到系统 PATH 中的 ffmpeg
-
-    【返回】
-        str: FFmpeg 可执行文件路径
-    """
-    project_dir = Path(__file__).parent
-    tools_dir = project_dir / "tools"
-
-    # 确定可执行文件名
-    ffmpeg_exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-    project_ffmpeg = tools_dir / ffmpeg_exe
-
-    if project_ffmpeg.exists():
-        return str(project_ffmpeg)
-
-    # 回退到系统 PATH
-    return "ffmpeg"
-
-
-def cleanup_temp_files() -> None:
-    """
-    【功能】清理项目临时目录中的残留文件
-
-    【用途】
-        在程序启动时调用，清理上次运行残留的临时音频文件。
-        避免因程序异常退出导致的临时文件堆积。
-    """
-    temp_dir = Path(__file__).parent / "temp"
-    if temp_dir.exists():
-        for f in temp_dir.glob("v2t_audio_*.wav"):
-            try:
-                f.unlink()
-            except Exception:
-                pass  # 静默忽略删除失败
 
 
 # =============================================================================

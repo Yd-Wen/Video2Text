@@ -262,7 +262,14 @@ Video2Text/
 ├── audio_extractor.py      # 音频提取模块，FFmpeg 封装
 ├── transcriber.py          # Whisper 转录模块，语音识别
 ├── output_writer.py        # 输出写入模块，支持多种格式
-├── utils.py                # 工具函数集合
+├── utils/                  # 工具函数包（按功能分类）
+│   ├── __init__.py         # 包入口，导出常用工具函数
+│   ├── path_util.py        # 路径相关工具
+│   ├── file_util.py        # 文件操作工具
+│   ├── log_util.py         # 日志配置工具
+│   ├── format_util.py      # 格式化工具
+│   ├── video_util.py       # 视频文件工具
+│   └── ffmpeg_util.py      # FFmpeg 相关工具
 ├── requirements.txt        # Python 依赖清单
 ├── README.md               # 项目说明文档
 ├── .gitignore              # Git 忽略配置
@@ -281,11 +288,34 @@ Video2Text/
 | `audio_extractor.py` | FFmpeg 音频提取 | `AudioExtractor` |
 | `transcriber.py` | Whisper 模型加载和转录 | `WhisperTranscriber` |
 | `output_writer.py` | 多格式结果输出 | `OutputWriter` |
-| `utils.py` | 通用工具函数 | `setup_logging()`, `validate_input_file()` |
+| `utils/` | 工具函数包 | 按功能分类的工具模块 |
 | `models/` | Whisper 模型存放目录 | 自动创建，首次运行时下载 |
 | `temp/` | 临时音频文件目录 | 自动创建，运行后自动清理 |
 | `tools/` | FFmpeg 存放目录（可选） | 放置 `ffmpeg.exe` 实现项目独立运行 |
 | `output/` | 转录结果输出目录 | 需在运行时通过 `-o` 指定 |
+
+### utils 工具包说明
+
+工具函数按功能分类在 `utils/` 目录下：
+
+| 模块 | 功能 | 主要函数 |
+|------|------|----------|
+| `path_util.py` | 路径管理 | `get_project_root()`, `get_models_dir()`, `get_temp_dir()` |
+| `file_util.py` | 文件操作 | `validate_input_file()`, `cleanup_temp_files()`, `safe_remove()` |
+| `log_util.py` | 日志配置 | `setup_logging()`, `get_logger()` |
+| `format_util.py` | 格式化 | `format_duration()`, `truncate_text()`, `pluralize()` |
+| `video_util.py` | 视频文件 | `is_video_file()`, `get_video_extensions()` |
+| `ffmpeg_util.py` | FFmpeg | `get_default_ffmpeg_path()`, `check_ffmpeg_available()` |
+
+使用示例：
+```python
+# 方式1：从包直接导入常用函数
+from utils import setup_logging, get_project_root
+
+# 方式2：从具体模块导入特定功能
+from utils.path_util import get_models_dir
+from utils.ffmpeg_util import get_default_ffmpeg_path
+```
 
 ---
 
