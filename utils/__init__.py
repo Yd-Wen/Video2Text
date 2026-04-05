@@ -8,13 +8,14 @@
 - file_util: 文件操作
 - log_util: 日志配置
 - format_util: 格式化
+- text_util: 文本处理（T2N新增）
 - video_util: 视频文件
 - ffmpeg_util: FFmpeg相关
 
 使用示例:
     from utils import setup_logging, validate_input_file
     from utils.path_util import get_project_root
-    from utils.ffmpeg_util import get_default_ffmpeg_path
+    from utils.text_util import read_text_file, clean_text
 """
 
 # 常用工具函数直接导出，方便使用
@@ -42,6 +43,17 @@ from .video_util import (
     get_video_extensions,
     is_video_file,
 )
+from .text_util import (
+    read_text_file,
+    read_json_transcript,
+    read_vocab_file,
+    merge_vocab_files,
+    clean_text,
+    apply_vocab_correction,
+    clean_and_correct_text,
+    generate_output_filename,
+    write_markdown,
+)
 
 __all__ = [
     # 日志
@@ -66,4 +78,14 @@ __all__ = [
     # 视频
     'get_video_extensions',
     'is_video_file',
+    # 文本处理（T2N）
+    'read_text_file',
+    'read_json_transcript',
+    'read_vocab_file',
+    'merge_vocab_files',
+    'clean_text',
+    'apply_vocab_correction',
+    'clean_and_correct_text',
+    'generate_output_filename',
+    'write_markdown',
 ]

@@ -165,3 +165,6 @@ htmlcov/
 secrets.json
 
 .claude/settings.local.json
+prompts/
+vocab/
+
