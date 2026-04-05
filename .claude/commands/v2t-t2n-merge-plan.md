@@ -180,7 +180,7 @@ python-dotenv           # 环境变量加载
 ```bash
 # .env 文件示例
 # API密钥
-DASHSCOPE_API_KEY=sk-b01fa56960e0483ab12dff7a7577129f
+DASHSCOPE_API_KEY=sk-xxx
 ```
 
 ## 交付标准
@@ -220,3 +220,13 @@ DASHSCOPE_API_KEY=sk-b01fa56960e0483ab12dff7a7577129f
 3. **参数透传**：
    - main.py 将各模式的专属参数原样传递给对应脚本
    - 保持 transcribe.py 和 generate.py 的独立性
+
+# 项目规划
+
+## 功能拆解
+
+尽可能详细，并且按照新特性逐步开发
+
+## 产出
+
+规划完成后，将规则文档输出到 .plan 文件中
