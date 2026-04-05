@@ -6,7 +6,7 @@
   <a href="https://github.com/openai/whisper"><img src="https://img.shields.io/badge/Whisper-OpenAI-orange.svg" alt="Whisper"></a>
 </p>
 
-<p align="center">统一工具支持视频转文本(v2t)、文本转笔记(t2n)、视频转笔记(v2n)三种模式，纯本地处理，保护隐私。</p>
+<p align="center">视频转笔记工具，支持视频转文本(v2t)、文本转笔记(t2n)、视频转笔记(v2n)三种模式。</p>
 
 ---
 
@@ -48,7 +48,6 @@ Video2Note 是一个统一的命令行工具，支持三种工作模式：
 | 多语言支持 | 多语言自动检测或手动指定 |
 | 大模型笔记 | 调用通义千问生成结构化笔记 |
 | 多格式笔记 | note(技术笔记)/weekly(周报)/diary(日记) |
-| 批量处理 | 支持单个文件处理（批量处理开发中）|
 
 ### 输出格式对比
 
@@ -69,25 +68,35 @@ Video2Note 是一个统一的命令行工具，支持三种工作模式：
 
 ---
 
-## 技术栈
-
-### 核心依赖
+## 项目结构
 
 ```
-Python 3.8+
-├── openai-whisper    # OpenAI 语音识别模型
-├── ffmpeg-python     # FFmpeg Python 封装
-├── torch             # PyTorch 深度学习框架
-├── numpy             # 数值计算
-└── tqdm              # 进度条显示
+Video2Note/
+├── main.py                 # 统一入口脚本（推荐）
+├── transcribe.py           # v2t 入口：视频转文本
+├── generate.py             # t2n 入口：文本转笔记
+├── audio_extractor.py      # 音频提取模块
+├── transcriber.py          # Whisper 转录模块
+├── output_writer.py        # 输出写入模块
+├── prompts_loader.py       # 提示词模板加载
+├── llm_client.py           # 大模型客户端
+├── config.py               # 配置管理
+├── utils/                  # 工具函数包
+├── prompts/                # 提示词模板目录
+│   ├── note.md             # 技术笔记模板
+│   ├── weekly.md           # 周报模板
+│   └── diary.md            # 日记模板
+├── vocab/                  # 词汇表目录
+├── requirements.txt        # Python 依赖
+├── README.md               # 项目文档
+├── models/                 # Whisper 模型存放目录
+├── output/                 # 输出根目录
+│   ├── text/               # v2t 输出目录
+│   ├── notes/              # t2n 输出目录
+│   └── temp/               # v2n 中间文件目录
+├── temp/                   # 临时音频文件目录
+└── tools/                  # FFmpeg 存放目录
 ```
-
-### 系统依赖
-
-- **FFmpeg 4.0+**: 用于音频提取和格式转换
-- **CPU**: 支持 SSE4.1 的 x86 处理器（Intel/AMD）
-- **内存**: 基础模型需 2GB+，大型模型需 8GB+
-- **磁盘**: 模型缓存约 1.5GB（使用 large 模型时）
 
 ---
 
@@ -126,11 +135,6 @@ sudo apt update
 sudo apt install ffmpeg
 ```
 
-**CentOS/RHEL:**
-```bash
-sudo yum install ffmpeg
-```
-
 **验证安装:**
 ```bash
 ffmpeg -version
@@ -148,14 +152,8 @@ ffmpeg -version
 Video2Note/
 ├── tools/
 │   └── ffmpeg.exe      # 放置 FFmpeg 可执行文件
-├── temp/               # 临时文件目录（自动创建）
 └── ...
 ```
-
-**优势：**
-- 无需配置系统 PATH
-- 项目可以整体打包移植
-- 避免与系统 FFmpeg 版本冲突
 
 ### 4. 创建虚拟环境
 
@@ -195,16 +193,7 @@ python main.py --mode t2n -i transcript.txt -nf note
 python main.py --mode v2n -i video.mp4 -nf weekly
 ```
 
-**原有入口（向下兼容）**
-```bash
-# v2t 模式
-python transcribe.py -i video.mp4
-
-# t2n 模式
-python generate.py -i transcript.txt -f note
-```
-
-### 命令行参数（main.py）
+### 命令行参数
 
 | 参数 | 简写 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
@@ -214,26 +203,24 @@ python generate.py -i transcript.txt -f note
 | `--verbose` | `-v` | 否 | False | 显示详细日志 |
 
 **v2t 模式参数：**
-| 参数 | 简写 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `--whisper-model` | - | 否 | base | Whisper模型（tiny/base/small/medium/large）|
-| `--language` | `-l` | 否 | auto | 语言代码（zh/en/ja）|
-| `--text-format` | - | 否 | txt | 输出格式（txt/json）|
-| `--keep-temp` | - | 否 | False | 保留临时音频文件 |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--whisper-model` | base | Whisper模型（tiny/base/small/medium/large）|
+| `--language` | auto | 语言代码（zh/en/ja）|
+| `--text-format` | txt | 输出格式（txt/json）|
 
 **t2n 模式参数：**
-| 参数 | 简写 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `--note-format` | `-nf` | 否 | note | 笔记格式（note/weekly/diary）|
-| `--llm-model` | - | 否 | qwen3-max | 大模型选择 |
-| `--vocab` | - | 否 | - | 词汇表JSON文件路径 |
-| `--temperature` | `-t` | 否 | 自动 | 生成温度（0.0-2.0）|
-| `--preview` | - | 否 | False | 预览模式，不保存文件 |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--note-format` | note | 笔记格式（note/weekly/diary）|
+| `--llm-model` | qwen3-max | 大模型选择 |
+| `--temperature` | 自动 | 生成温度（0.0-2.0）|
+| `--preview` | False | 预览模式，不保存文件 |
 
 **v2n 模式参数：**
-| 参数 | 简写 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `--keep-text` | - | 否 | False | 保留中间文本文件 |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--keep-text` | False | 保留中间文本文件 |
 
 ### 使用示例
 
@@ -252,193 +239,33 @@ python main.py --mode t2n -i meeting.txt -o ./output/ -nf weekly
 python main.py --mode v2n -i lecture.mp4 -nf note --keep-text
 ```
 
-**示例 4: 预览模式（不保存文件）**
-```bash
-python main.py --mode t2n -i draft.txt -nf diary --preview
-```
-
 ### 输出文件
-
-转录完成后，输出文件将保存在指定目录，文件名基于输入视频：
 
 ```
 output/
-├── video.txt      # 纯文本格式
-└── video.json     # JSON 完整数据
+├── text/              # v2t 输出
+│   └── video.txt
+├── notes/             # t2n/v2n 输出
+│   └── video_note.md
+└── temp/              # v2n 中间文件（自动清理）
 ```
-
-如果文件已存在，会自动添加序号后缀（如 `video_1.txt`）。
-
-### Python API 使用
-
-```python
-from pathlib import Path
-from audio_extractor import AudioExtractor
-from transcriber import WhisperTranscriber
-from output_writer import OutputWriter
-
-# 1. 提取音频
-extractor = AudioExtractor()
-audio_path = extractor.extract(Path("video.mp4"))
-
-# 2. 转录音频
-transcriber = WhisperTranscriber(model_name="base")
-transcriber.load_model()
-result = transcriber.transcribe(audio_path, language="zh")
-
-# 3. 保存结果
-writer = OutputWriter(output_dir=Path("./output"))
-output_file = writer.write(result, "video.mp4", format_type="srt")
-
-print(f"转录完成: {output_file}")
-```
-
----
-
-## 项目结构
-
-```
-Video2Note/
-├── main.py                 # 统一入口脚本（推荐）
-├── transcribe.py           # v2t 入口：视频转文本
-├── generate.py             # t2n 入口：文本转笔记
-├── audio_extractor.py      # 音频提取模块
-├── transcriber.py          # Whisper 转录模块
-├── output_writer.py        # 输出写入模块
-├── prompts_loader.py       # 提示词模板加载
-├── llm_client.py           # 大模型客户端
-├── config.py               # 配置管理
-├── utils/                  # 工具函数包
-├── prompts/                # 提示词模板目录
-│   ├── note.md             # 技术笔记模板
-│   ├── weekly.md           # 周报模板
-│   └── diary.md            # 日记模板
-├── vocab/                  # 词汇表目录
-├── requirements.txt        # Python 依赖
-├── README.md               # 项目文档
-├── models/                 # Whisper 模型存放目录
-├── output/                 # 输出根目录
-│   ├── text/               # v2t 输出目录
-│   ├── notes/              # t2n 输出目录
-│   └── temp/               # v2n 中间文件目录
-├── temp/                   # 临时音频文件目录
-└── tools/                  # FFmpeg 存放目录
-```
-
-### 模块说明
-
-| 模块/目录 | 职责 | 说明 |
-|-----------|------|------|
-| `main.py` | 统一入口 | 推荐使用的入口，支持三种模式 |
-| `transcribe.py` | v2t 入口 | 视频转文本独立入口（向下兼容）|
-| `generate.py` | t2n 入口 | 文本转笔记独立入口（向下兼容）|
-| `audio_extractor.py` | 音频提取 | FFmpeg 封装 |
-| `transcriber.py` | 语音转录 | Whisper 模型加载和转录 |
-| `output_writer.py` | 结果输出 | 多格式输出支持 |
-| `prompts_loader.py` | 提示词加载 | 管理笔记模板 |
-| `llm_client.py` | 大模型调用 | DashScope/通义千问客户端 |
-| `config.py` | 配置管理 | API密钥等配置 |
-| `utils/` | 工具函数包 | 按功能分类的工具模块 |
-| `models/` | 模型目录 | Whisper模型缓存 |
-| `output/` | 输出目录 | 包含 text/、notes/、temp/ 子目录 |
-| `temp/` | 临时目录 | 音频文件，运行后自动清理 |
-| `tools/` | 工具目录 | FFmpeg 可执行文件（可选）|
-
-### utils 工具包说明
-
-工具函数按功能分类在 `utils/` 目录下：
-
-| 模块 | 功能 | 主要函数 |
-|------|------|----------|
-| `path_util.py` | 路径管理 | `get_project_root()`, `get_models_dir()`, `get_temp_dir()` |
-| `file_util.py` | 文件操作 | `validate_input_file()`, `cleanup_temp_files()`, `safe_remove()` |
-| `log_util.py` | 日志配置 | `setup_logging()`, `get_logger()` |
-| `format_util.py` | 格式化 | `format_duration()`, `truncate_text()`, `pluralize()` |
-| `video_util.py` | 视频文件 | `is_video_file()`, `get_video_extensions()` |
-| `ffmpeg_util.py` | FFmpeg | `get_default_ffmpeg_path()`, `check_ffmpeg_available()` |
-
-使用示例：
-```python
-# 方式1：从包直接导入常用函数
-from utils import setup_logging, get_project_root
-
-# 方式2：从具体模块导入特定功能
-from utils.path_util import get_models_dir
-from utils.ffmpeg_util import get_default_ffmpeg_path
-```
-
----
-
-## 常见问题
-
-### 1. FFmpeg 未找到
-
-**错误:** `RuntimeError: FFmpeg 未找到`
-
-**解决:**
-- 方式一：将 FFmpeg 可执行文件放入项目 `tools/` 目录
-- 方式二：将 FFmpeg 安装并添加到系统 PATH
-- 方式三：使用 `--ffmpeg-path` 指定完整路径
-
-### 2. 模型下载失败
-
-**错误:** `模型加载失败: Connection timeout`
-
-**解决:**
-- 首次下载模型需要网络连接
-- 模型下载位置：项目根目录的 `models/` 文件夹
-- 可手动下载模型文件放置到该目录，文件名为 `<模型名>.pt`（如 `base.pt`）
-
-### 3. 内存不足
-
-**现象:** 程序被系统终止或报错 `CUDA out of memory`
-
-**解决:**
-- 使用更小的模型（tiny/base）
-- 关闭其他占用内存的程序
-- 使用 CPU 模式（默认自动检测）
-
-### 4. 中文显示乱码
-
-**解决:**
-- 确保使用 UTF-8 编码打开输出文件
-- Windows 记事本可能需要手动选择编码
-
----
-
-## 作者
-
-**开发团队:** Video2Note Project
 
 ---
 
 ## 开源协议
 
-本项目采用 [MIT License](LICENSE) 开源协议。
+本项目基于 [MIT](LICENSE) License 开源。
 
-```
-MIT License
+Copyright (C) 2026 - present by Yd Wen
 
-Copyright (c) 2026 Video2Note Project
+---
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+## 作者
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
+- **Yd Wen** 
+  - [GitHub](https://github.com/Yd-Wen)
+  - [Gitee](https://gitee.com/yindong-wen)
+  - [个人主页](https://yindongwen.top)
 
 ---
 
@@ -452,12 +279,11 @@ SOFTWARE.
   - `v2t` 模式：视频转文本
   - `t2n` 模式：文本转笔记
   - `v2n` 模式：视频直接转笔记（一键完成）
-- 完全复用现有 `transcribe.py` 和 `generate.py`
+- 复用 `transcribe.py` 和 `generate.py`
 - 参数透传设计，保持各脚本独立性
 - 自动清理 v2n 模式中间文件
-- 更新 README 文档
 
-### v1.0.0 (2024-XX-XX)
+### v1.0.0
 
 **Phase 1 - 基础功能完成**
 
@@ -466,18 +292,6 @@ SOFTWARE.
 - 集成 FFmpeg 音频提取（16kHz/16bit/单声道）
 - 集成 OpenAI Whisper 语音识别
 - 支持 5 种模型规模选择
-- 命令行界面完整支持
-- 自动清理临时文件
-- 详细的错误处理和日志输出
-- 完整的文档和注释
-
-**待开发功能:**
-- [ ] 批量文件处理
-- [ ] 人声活动检测（VAD）过滤静音
-- [ ] 进度条显示
-- [ ] 配置文件支持
-- [ ] GPU 加速优化
-- [ ] 多线程并行处理
 
 ---
 
@@ -490,5 +304,5 @@ SOFTWARE.
 ---
 
 <p align="center">
-  Made with ❤️ by Video2Note Project
+Made with ❤️ by Video2Note Project
 </p>
