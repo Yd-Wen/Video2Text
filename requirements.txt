@@ -1,4 +1,4 @@
-# Video2Text (V2T) - Python依赖清单
+# Video2Note (V2N) - Python依赖清单
 # 安装命令: pip install -r requirements.txt
 
 # =============================================================================

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Video2Text (V2T) - Whisper 转录模块 (transcriber.py)
+Video2Note (V2N) - Whisper 转录模块 (transcriber.py)
 
 【模块用途】
     负责加载 OpenAI Whisper 模型并执行语音识别转录。

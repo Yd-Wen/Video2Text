@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Video2Text (V2T) - 视频语音转文本工具
+Video2Note (V2N) - 视频语音转文本工具
 主入口脚本 (transcribe.py)
 
 【模块用途】
@@ -99,7 +99,7 @@ def parse_arguments() -> argparse.Namespace:
     # - formatter_class: 使用 RawDescriptionHelpFormatter 保留示例格式
     parser = argparse.ArgumentParser(
         prog="transcribe.py",
-        description="Video2Text (V2T) - 视频语音转文本工具，基于 OpenAI Whisper",
+        description="Video2Note (V2N) - 视频语音转文本工具，基于 OpenAI Whisper",
         epilog="示例: python transcribe.py -i video.mp4 -o ./output/ -l zh -m base",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -236,7 +236,7 @@ def main() -> int:
 
     # 【欢迎信息】仅在非 verbose 模式显示简洁标题
     logger.info("=" * 60)
-    logger.info("Video2Text (V2T) - 视频语音转文本工具")
+    logger.info("Video2Note (V2N) - 视频语音转文本工具")
     logger.info("=" * 60)
 
     # verbose 模式下显示详细配置

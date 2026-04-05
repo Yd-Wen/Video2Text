@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Video2Text (V2T) - 输出写入模块 (output_writer.py)
+Video2Note (V2N) - 输出写入模块 (output_writer.py)
 
 【模块用途】
     负责将转录结果保存为各种格式的文件。

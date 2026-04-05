@@ -97,7 +97,7 @@ Python 3.8+
 
 ```bash
 git clone <repository-url>
-cd Video2Text
+cd Video2Note
 ```
 
 ### 2. 安装 FFmpeg
@@ -145,7 +145,7 @@ ffmpeg -version
 3. 程序会自动检测并使用该 FFmpeg
 
 ```
-Video2Text/
+Video2Note/
 ├── tools/
 │   └── ffmpeg.exe      # 放置 FFmpeg 可执行文件
 ├── temp/               # 临时文件目录（自动创建）
@@ -408,7 +408,7 @@ from utils.ffmpeg_util import get_default_ffmpeg_path
 
 ## 作者
 
-**开发团队:** Video2Text Project
+**开发团队:** Video2Note Project
 
 ---
 
@@ -419,7 +419,7 @@ from utils.ffmpeg_util import get_default_ffmpeg_path
 ```
 MIT License
 
-Copyright (c) 2026 Video2Text Project
+Copyright (c) 2026 Video2Note Project
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Video2Text (V2T) - 音频提取模块 (audio_extractor.py)
+Video2Note (V2N) - 音频提取模块 (audio_extractor.py)
 
 【模块用途】
     负责从视频文件中提取音频并转换为 Whisper 模型要求的格式。
