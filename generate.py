@@ -343,21 +343,25 @@ def generate_multi_chunk(client, prompt_loader, text_chunks: List[str],
     return EXIT_SUCCESS
 
 
-def load_vocab_files(vocab_paths_str: Optional[str]) -> Optional[Dict[str, str]]:
+def load_vocab_files(vocab_paths_str: Optional[str], input_path: Path) -> Optional[Dict[str, str]]:
     """
     【功能】加载词汇表文件
 
     【参数】
-        vocab_paths_str: 逗号分隔的词汇表文件路径字符串
+        vocab_paths_str: 逗号分隔的词汇表文件路径字符串，为None时自动检测与输入文件同名的JSON
+        input_path: 输入文件路径，用于自动检测同名词汇表
 
     【返回】
         Dict[str, str]: 合并后的词汇表字典，或 None
     """
     if not vocab_paths_str:
-        # 默认加载 default.json
-        default_vocab = Path("vocab/default.json")
-        if default_vocab.exists():
-            return read_vocab_file(default_vocab)
+        # 自动检测与输入文件同名的 JSON 词汇表文件
+        # 例如: test.txt -> 查找 test.json
+        auto_vocab = input_path.with_suffix('.json')
+        if auto_vocab.exists():
+            logging.info(f"  自动加载词汇表: {auto_vocab}")
+            return read_vocab_file(auto_vocab)
+        # 没有找到同名词汇表，返回空（不加载 default.json）
         return None
 
     # 解析多个文件路径
@@ -493,7 +497,7 @@ def main() -> int:
     # -------------------------------------------------------------------------
     logger.info("[4/6] 加载词汇表...")
 
-    vocab = load_vocab_files(args.vocab)
+    vocab = load_vocab_files(args.vocab, input_path)
     if vocab:
         logger.info(f"  [OK] 词汇表加载完成，共 {len(vocab)} 条映射")
     else:

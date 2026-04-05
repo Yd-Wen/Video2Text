@@ -1,4 +1,4 @@
-# Video2Text (V2T) - 视频语音转文本工具
+# Video2Note (V2N) - 视频转笔记工具
 
 <p align="center">
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.8+-blue.svg" alt="Python"></a>
@@ -6,24 +6,38 @@
   <a href="https://github.com/openai/whisper"><img src="https://img.shields.io/badge/Whisper-OpenAI-orange.svg" alt="Whisper"></a>
 </p>
 
-<p align="center">基于 OpenAI Whisper 的本地视频语音识别工具，支持多种输出格式，纯离线运行，保护隐私。</p>
+<p align="center">统一工具支持视频转文本(v2t)、文本转笔记(t2n)、视频转笔记(v2n)三种模式，纯本地处理，保护隐私。</p>
 
 ---
 
 ## 简介
 
-Video2Text 是一个命令行工具，能够从视频文件中提取音频并使用 OpenAI 的 Whisper 模型进行语音识别，将语音转换为文本。所有处理都在本地完成，无需联网（首次下载模型除外），确保数据隐私安全。
+Video2Note 是一个统一的命令行工具，支持三种工作模式：
+- **v2t 模式**: 视频转文本 (Video to Text)
+- **t2n 模式**: 文本转笔记 (Text to Note)
+- **v2n 模式**: 视频转笔记 (Video to Note，一键完成)
+
+基于 OpenAI Whisper 进行本地语音识别，调用大模型生成结构化笔记。所有处理都在本地完成，无需联网（首次下载模型和调用大模型除外），确保数据隐私安全。
 
 **核心特点：**
-- 纯本地处理，视频数据不上传云端
+- 三种工作模式灵活切换
+- 纯本地语音识别，视频数据不上传云端
 - 支持多语言自动识别
-- 多种输出格式满足不同场景需求
+- 多种笔记格式（技术笔记/周报/日记）
 - 自动清理临时文件，不污染系统
 - 详细的日志输出，便于排查问题
 
 ---
 
 ## 功能特性
+
+### 三种工作模式
+
+| 模式 | 说明 | 命令示例 |
+|------|------|----------|
+| v2t | 视频转文本 | `python main.py --mode v2t -i video.mp4` |
+| t2n | 文本转笔记 | `python main.py --mode t2n -i text.txt -nf weekly` |
+| v2n | 视频转笔记 | `python main.py --mode v2n -i video.mp4 -nf note` |
 
 ### 核心功能
 
@@ -32,7 +46,8 @@ Video2Text 是一个命令行工具，能够从视频文件中提取音频并使
 | 视频转录 | 支持 MP4/MKV/AVI/MOV 等常见视频格式 |
 | 音频提取 | 自动提取并重采样为 16kHz/16bit WAV |
 | 多语言支持 | 多语言自动检测或手动指定 |
-| 多格式输出 | TXT/JSON 两种格式 |
+| 大模型笔记 | 调用通义千问生成结构化笔记 |
+| 多格式笔记 | note(技术笔记)/weekly(周报)/diary(日记) |
 | 批量处理 | 支持单个文件处理（批量处理开发中）|
 
 ### 输出格式对比
@@ -168,50 +183,78 @@ pip install -r requirements.txt
 
 ### 快速开始
 
+**统一入口 (推荐)**
 ```bash
-# 基础用法 - 只需指定输入文件
-python transcribe.py -i video.mp4
+# 视频转文本
+python main.py --mode v2t -i video.mp4
 
-# 完整参数 - 指定输出目录、语言、模型、格式
-python transcribe.py -i video.mp4 -o ./output/ -l zh -m base -f srt
+# 文本转笔记
+python main.py --mode t2n -i transcript.txt -nf note
 
-# 调试模式 - 保留临时文件，显示详细日志
-python transcribe.py -i video.mp4 -v --keep-temp
+# 视频直接转笔记（一键完成）
+python main.py --mode v2n -i video.mp4 -nf weekly
 ```
 
-### 命令行参数
+**原有入口（向下兼容）**
+```bash
+# v2t 模式
+python transcribe.py -i video.mp4
+
+# t2n 模式
+python generate.py -i transcript.txt -f note
+```
+
+### 命令行参数（main.py）
 
 | 参数 | 简写 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `--input` | `-i` | 是 | - | 输入视频文件路径 |
-| `--output` | `-o` | 否 | output | 输出目录路径 |
-| `--language` | `-l` | 否 | auto | 语言代码（如 zh, en, ja）|
-| `--model` | `-m` | 否 | base | 模型大小（tiny/base/small/medium/large）|
-| `--format` | `-f` | 否 | txt | 输出格式（txt/json）|
-| `--ffmpeg-path` | - | 否 | ffmpeg | FFmpeg 可执行文件路径 |
-| `--keep-temp` | - | 否 | False | 保留临时音频文件 |
+| `--mode` | `-m` | 是 | - | 工作模式：v2t/t2n/v2n |
+| `--input` | `-i` | 是 | - | 输入文件路径 |
+| `--output` | `-o` | 否 | output | 输出根目录 |
 | `--verbose` | `-v` | 否 | False | 显示详细日志 |
+
+**v2t 模式参数：**
+| 参数 | 简写 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `--whisper-model` | - | 否 | base | Whisper模型（tiny/base/small/medium/large）|
+| `--language` | `-l` | 否 | auto | 语言代码（zh/en/ja）|
+| `--text-format` | - | 否 | txt | 输出格式（txt/json）|
+| `--keep-temp` | - | 否 | False | 保留临时音频文件 |
+
+**t2n 模式参数：**
+| 参数 | 简写 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `--note-format` | `-nf` | 否 | note | 笔记格式（note/weekly/diary）|
+| `--llm-model` | - | 否 | qwen3-max | 大模型选择 |
+| `--vocab` | - | 否 | - | 词汇表JSON文件路径 |
+| `--temperature` | `-t` | 否 | 自动 | 生成温度（0.0-2.0）|
+| `--preview` | - | 否 | False | 预览模式，不保存文件 |
+
+**v2n 模式参数：**
+| 参数 | 简写 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `--keep-text` | - | 否 | False | 保留中间文本文件 |
 
 ### 使用示例
 
-**示例 1: 转录中文视频为 TXT**
+**示例 1: 视频转文本**
 ```bash
-python transcribe.py -i meeting.mp4 -o ./output/ -l zh -f txt
+python main.py --mode v2t -i meeting.mp4 -o ./output/ -l zh
 ```
 
-**示例 2: 生成 JSON 格式文件**
+**示例 2: 文本转周报**
 ```bash
-python transcribe.py -i movie.mkv -o ./subtitles/ -l en -m small -f json
+python main.py --mode t2n -i meeting.txt -o ./output/ -nf weekly
 ```
 
-**示例 3: 使用指定 FFmpeg 路径**
+**示例 3: 视频直接转技术笔记**
 ```bash
-python transcribe.py -i video.mp4 -o ./output/ --ffmpeg-path "your_path/ffmpeg.exe"
+python main.py --mode v2n -i lecture.mp4 -nf note --keep-text
 ```
 
-**示例 4: 调试模式（保留临时文件）**
+**示例 4: 预览模式（不保存文件）**
 ```bash
-python transcribe.py -i video.mp4 -o ./output/ -v --keep-temp
+python main.py --mode t2n -i draft.txt -nf diary --preview
 ```
 
 ### 输出文件
@@ -255,42 +298,51 @@ print(f"转录完成: {output_file}")
 ## 项目结构
 
 ```
-Video2Text/
-├── transcribe.py           # 主入口脚本，命令行参数解析和流程编排
-├── audio_extractor.py      # 音频提取模块，FFmpeg 封装
-├── transcriber.py          # Whisper 转录模块，语音识别
-├── output_writer.py        # 输出写入模块，支持多种格式
-├── utils/                  # 工具函数包（按功能分类）
-│   ├── __init__.py         # 包入口，导出常用工具函数
-│   ├── path_util.py        # 路径相关工具
-│   ├── file_util.py        # 文件操作工具
-│   ├── log_util.py         # 日志配置工具
-│   ├── format_util.py      # 格式化工具
-│   ├── video_util.py       # 视频文件工具
-│   └── ffmpeg_util.py      # FFmpeg 相关工具
-├── requirements.txt        # Python 依赖清单
-├── README.md               # 项目说明文档
-├── .gitignore              # Git 忽略配置
-├── models/                 # Whisper 模型存放目录（gitignore，自动创建）
-├── output/                 # 转录结果输出目录（gitignore）
-├── temp/                   # 临时文件目录（gitignore，自动创建）
-├── tools/                  # FFmpeg 存放目录（gitignore，可选）
-└── test.mp4                # 测试视频文件（可选）
+Video2Note/
+├── main.py                 # 统一入口脚本（推荐）
+├── transcribe.py           # v2t 入口：视频转文本
+├── generate.py             # t2n 入口：文本转笔记
+├── audio_extractor.py      # 音频提取模块
+├── transcriber.py          # Whisper 转录模块
+├── output_writer.py        # 输出写入模块
+├── prompts_loader.py       # 提示词模板加载
+├── llm_client.py           # 大模型客户端
+├── config.py               # 配置管理
+├── utils/                  # 工具函数包
+├── prompts/                # 提示词模板目录
+│   ├── note.md             # 技术笔记模板
+│   ├── weekly.md           # 周报模板
+│   └── diary.md            # 日记模板
+├── vocab/                  # 词汇表目录
+├── requirements.txt        # Python 依赖
+├── README.md               # 项目文档
+├── models/                 # Whisper 模型存放目录
+├── output/                 # 输出根目录
+│   ├── text/               # v2t 输出目录
+│   ├── notes/              # t2n 输出目录
+│   └── temp/               # v2n 中间文件目录
+├── temp/                   # 临时音频文件目录
+└── tools/                  # FFmpeg 存放目录
 ```
 
 ### 模块说明
 
-| 模块/目录 | 职责 | 关键类/函数 |
-|-----------|------|-------------|
-| `transcribe.py` | 流程编排、CLI 接口 | `main()`, `parse_arguments()` |
-| `audio_extractor.py` | FFmpeg 音频提取 | `AudioExtractor` |
-| `transcriber.py` | Whisper 模型加载和转录 | `WhisperTranscriber` |
-| `output_writer.py` | 多格式结果输出 | `OutputWriter` |
+| 模块/目录 | 职责 | 说明 |
+|-----------|------|------|
+| `main.py` | 统一入口 | 推荐使用的入口，支持三种模式 |
+| `transcribe.py` | v2t 入口 | 视频转文本独立入口（向下兼容）|
+| `generate.py` | t2n 入口 | 文本转笔记独立入口（向下兼容）|
+| `audio_extractor.py` | 音频提取 | FFmpeg 封装 |
+| `transcriber.py` | 语音转录 | Whisper 模型加载和转录 |
+| `output_writer.py` | 结果输出 | 多格式输出支持 |
+| `prompts_loader.py` | 提示词加载 | 管理笔记模板 |
+| `llm_client.py` | 大模型调用 | DashScope/通义千问客户端 |
+| `config.py` | 配置管理 | API密钥等配置 |
 | `utils/` | 工具函数包 | 按功能分类的工具模块 |
-| `models/` | Whisper 模型存放目录 | 自动创建，首次运行时下载 |
-| `temp/` | 临时音频文件目录 | 自动创建，运行后自动清理 |
-| `tools/` | FFmpeg 存放目录（可选） | 放置 `ffmpeg.exe` 实现项目独立运行 |
-| `output/` | 转录结果输出目录 | 需在运行时通过 `-o` 指定 |
+| `models/` | 模型目录 | Whisper模型缓存 |
+| `output/` | 输出目录 | 包含 text/、notes/、temp/ 子目录 |
+| `temp/` | 临时目录 | 音频文件，运行后自动清理 |
+| `tools/` | 工具目录 | FFmpeg 可执行文件（可选）|
 
 ### utils 工具包说明
 
@@ -392,6 +444,19 @@ SOFTWARE.
 
 ## 更新日志
 
+### v2.0.0 (2026-04-05)
+
+**V2T + T2N 合并完成**
+
+- 新增统一入口 `main.py`，支持三种工作模式：
+  - `v2t` 模式：视频转文本
+  - `t2n` 模式：文本转笔记
+  - `v2n` 模式：视频直接转笔记（一键完成）
+- 完全复用现有 `transcribe.py` 和 `generate.py`
+- 参数透传设计，保持各脚本独立性
+- 自动清理 v2n 模式中间文件
+- 更新 README 文档
+
 ### v1.0.0 (2024-XX-XX)
 
 **Phase 1 - 基础功能完成**
@@ -425,5 +490,5 @@ SOFTWARE.
 ---
 
 <p align="center">
-  Made with ❤️ by Video2Text Project
+  Made with ❤️ by Video2Note Project
 </p>
