@@ -253,6 +253,147 @@ def clean_and_correct_text(text: str, vocab: Optional[Dict[str, str]] = None) ->
 
 
 # =============================================================================
+# 文本分段（Phase 5: 智能分段）
+# =============================================================================
+
+def estimate_tokens(text: str) -> int:
+    """
+    【功能】估算文本的 token 数量（粗略估算）
+
+    【估算规则】
+        - 中文字符：1.5 字符/token
+        - 其他字符：0.75 字符/token
+
+    【参数】
+        text: 输入文本
+
+    【返回】
+        int: 估算的 token 数
+    """
+    chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+    other_chars = len(text) - chinese_chars
+
+    estimated = int(chinese_chars / 1.5 + other_chars / 0.75)
+    return max(1, estimated)
+
+
+def split_text_into_chunks(text: str, max_tokens: int = 12000, overlap_tokens: int = 500) -> List[str]:
+    """
+    【功能】将长文本智能分段
+
+    【分段策略】
+        1. 优先按段落分割（双换行符）
+        2. 如果段落仍然过长，按句子分割
+        3. 保持段落间的上下文重叠
+
+    【参数】
+        text: 原始文本
+        max_tokens: 每段最大 token 数（默认 12000，留出空间给提示词）
+        overlap_tokens: 段落间重叠 token 数（默认 500）
+
+    【返回】
+        List[str]: 分段后的文本列表
+    """
+    # 如果文本本身不长，直接返回
+    total_tokens = estimate_tokens(text)
+    if total_tokens <= max_tokens:
+        return [text]
+
+    logger.info(f"文本较长（估算 {total_tokens} tokens），将智能分段处理")
+
+    # 按段落分割
+    paragraphs = text.split('\n\n')
+    chunks = []
+    current_chunk = []
+    current_tokens = 0
+
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+
+        para_tokens = estimate_tokens(para)
+
+        # 如果单个段落就超过限制，需要进一步分割
+        if para_tokens > max_tokens:
+            # 先保存当前累积的内容
+            if current_chunk:
+                chunks.append('\n\n'.join(current_chunk))
+                # 保留最后一部分作为重叠
+                overlap_text = get_overlap_text(current_chunk, overlap_tokens)
+                current_chunk = [overlap_text] if overlap_text else []
+                current_tokens = estimate_tokens(overlap_text) if overlap_text else 0
+
+            # 按句子分割长段落
+            sentences = re.split(r'([。！？.!?]\s*)', para)
+            sentences = [''.join(sentences[i:i+2]) for i in range(0, len(sentences), 2)]
+
+            for sent in sentences:
+                sent = sent.strip()
+                if not sent:
+                    continue
+
+                sent_tokens = estimate_tokens(sent)
+
+                if current_tokens + sent_tokens > max_tokens and current_chunk:
+                    # 保存当前块
+                    chunks.append('\n\n'.join(current_chunk))
+                    # 保留重叠
+                    overlap_text = get_overlap_text(current_chunk, overlap_tokens)
+                    current_chunk = [overlap_text, sent] if overlap_text else [sent]
+                    current_tokens = estimate_tokens('\n\n'.join(current_chunk))
+                else:
+                    current_chunk.append(sent)
+                    current_tokens += sent_tokens
+
+        else:
+            # 段落可以正常累积
+            if current_tokens + para_tokens > max_tokens and current_chunk:
+                # 保存当前块
+                chunks.append('\n\n'.join(current_chunk))
+                # 保留重叠内容
+                overlap_text = get_overlap_text(current_chunk, overlap_tokens)
+                current_chunk = [overlap_text, para] if overlap_text else [para]
+                current_tokens = estimate_tokens('\n\n'.join(current_chunk))
+            else:
+                current_chunk.append(para)
+                current_tokens += para_tokens
+
+    # 保存最后一个块
+    if current_chunk:
+        chunks.append('\n\n'.join(current_chunk))
+
+    logger.info(f"文本已分为 {len(chunks)} 段")
+    return chunks
+
+
+def get_overlap_text(paragraphs: List[str], overlap_tokens: int) -> str:
+    """
+    【功能】从段落列表中提取重叠文本
+
+    【参数】
+        paragraphs: 段落列表
+        overlap_tokens: 需要的重叠 token 数
+
+    【返回】
+        str: 重叠文本
+    """
+    overlap_text = ""
+    overlap_estimate = 0
+
+    # 从后向前累积段落，直到达到重叠量
+    for para in reversed(paragraphs):
+        para_tokens = estimate_tokens(para)
+        if overlap_estimate + para_tokens <= overlap_tokens * 1.5:  # 允许一些弹性
+            overlap_text = para + ('\n\n' + overlap_text if overlap_text else '')
+            overlap_estimate += para_tokens
+        else:
+            break
+
+    return overlap_text
+
+
+# =============================================================================
 # 文件输出
 # =============================================================================
 

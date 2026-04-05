@@ -53,6 +53,8 @@ from .text_util import (
     clean_and_correct_text,
     generate_output_filename,
     write_markdown,
+    estimate_tokens,
+    split_text_into_chunks,
 )
 
 __all__ = [
@@ -88,4 +90,7 @@ __all__ = [
     'clean_and_correct_text',
     'generate_output_filename',
     'write_markdown',
+    # 文本分段（Phase 5）
+    'estimate_tokens',
+    'split_text_into_chunks',
 ]

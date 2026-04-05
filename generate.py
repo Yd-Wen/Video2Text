@@ -54,10 +54,16 @@ from utils import (
     apply_vocab_correction,
     generate_output_filename,
     write_markdown,
+    estimate_tokens,
+    split_text_into_chunks,
 )
 
 # 导入提示词加载器
 from prompts_loader import get_prompt_loader
+
+# 导入 LLM 客户端和配置
+from config import get_config
+from llm_client import LLMClient, HAS_DASHSCOPE
 
 # =============================================================================
 # 配置常量区 - 集中管理可配置参数
@@ -70,14 +76,29 @@ EXIT_FILE_NOT_FOUND = 2    # 输入文件不存在或无法读取
 EXIT_READ_ERROR = 3        # 文件读取失败
 EXIT_OUTPUT_ERROR = 4      # 输出写入失败
 EXIT_CONFIG_ERROR = 5      # 配置错误
+EXIT_LLM_ERROR = 6         # 大模型调用失败
 
 # 【支持的配置选项】与业务逻辑解耦，方便后续扩展
 SUPPORTED_FORMATS = ["note", "weekly", "diary"]  # 笔记格式白名单
-SUPPORTED_MODELS = ["deepseek", "openai", "qwen"]  # 支持的模型
+SUPPORTED_MODELS = ["qwen3-max"]  # 暂时仅支持 qwen3-max
 
 # 【默认值配置】与 argparse 定义保持一致，便于统一修改
 DEFAULT_FORMAT = "note"    # 默认技术笔记格式
-DEFAULT_MODEL = "deepseek"  # 默认使用deepseek
+DEFAULT_MODEL = "qwen3-max"  # 默认使用 qwen3-max
+
+# 【格式推荐的温度设置】较低温度更确定，较高温度更创造性
+FORMAT_TEMPERATURES = {
+    "note": 0.5,      # 技术笔记：适中，平衡准确性和流畅性
+    "weekly": 0.3,    # 周报：较低，确保事实准确
+    "diary": 0.7,     # 日记：较高，更有文采和个性
+}
+
+# 【输出长度映射】映射到 max_tokens
+LENGTH_TOKENS = {
+    "short": 2048,    # 简洁摘要
+    "medium": 4096,   # 标准笔记
+    "long": 8192,     # 详细记录
+}
 
 
 # =============================================================================
@@ -162,7 +183,164 @@ def parse_arguments() -> argparse.Namespace:
         help="启用详细日志输出（DEBUG 级别），便于排查问题"
     )
 
+    # 【Phase 5: 格式优化参数】
+    parser.add_argument(
+        "--temperature", "-t",
+        type=float,
+        default=None,
+        help="生成温度 (0.0-2.0)，控制创造性。较低值更确定，较高值更多样。默认: 按格式自动选择"
+    )
+
+    parser.add_argument(
+        "--max-length", "-l",
+        type=str,
+        default="medium",
+        choices=["short", "medium", "long"],
+        help="输出长度控制: short(简洁摘要), medium(标准笔记), long(详细记录)。默认: medium"
+    )
+
+    parser.add_argument(
+        "--no-stream",
+        action="store_true",
+        help="禁用流式输出，等待完整响应后再输出（仅影响预览模式）"
+    )
+
     return parser.parse_args()
+
+
+def generate_multi_chunk(client, prompt_loader, text_chunks: List[str],
+                         vocab: Optional[Dict[str, str]], args,
+                         temperature: float, max_tokens: int,
+                         output_path: Path, logger) -> int:
+    """
+    【功能】处理多段文本的生成
+
+    【参数】
+        client: LLMClient 实例
+        prompt_loader: 提示词加载器
+        text_chunks: 文本段列表
+        vocab: 词汇表
+        args: 命令行参数
+        temperature: 温度参数
+        max_tokens: 最大 token 数
+        output_path: 输出文件路径
+        logger: 日志记录器
+
+    【返回】
+        int: 退出码
+    """
+    from llm_client import GenerationResult
+
+    logger.info(f"开始处理 {len(text_chunks)} 段文本...")
+
+    all_contents = []
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_time = 0
+    is_partial = False
+
+    for i, chunk in enumerate(text_chunks, 1):
+        logger.info(f"\n[{i}/{len(text_chunks)}] 生成第 {i} 段笔记...")
+
+        # 构建提示词
+        messages = prompt_loader.build_messages(
+            format_type=args.format,
+            text=chunk,
+            vocab=vocab
+        )
+
+        if args.preview:
+            # 预览模式只显示第一段
+            logger.info("【预览模式仅显示第一段】\n")
+            print("-" * 60)
+            print(f"# 第 1/{len(text_chunks)} 段\n")
+
+            generated_content = ""
+            try:
+                for text_chunk in client.generate_stream(messages, temperature=temperature, max_tokens=max_tokens):
+                    print(text_chunk, end='', flush=True)
+                    generated_content += text_chunk
+                print("\n" + "-" * 60)
+                logger.info("\n[DONE] 预览完成（多段文本仅显示第一段）")
+                # 预览模式不继续处理
+                return EXIT_SUCCESS
+            except KeyboardInterrupt:
+                print("\n" + "-" * 60)
+                logger.info("\n[DONE] 生成被中断")
+                return EXIT_SUCCESS
+        else:
+            # 文件模式：逐段生成
+            try:
+                # 为每段创建临时输出路径
+                chunk_output = output_path.with_suffix(f'.part{i}.md')
+
+                result = client.generate_to_file(
+                    messages, chunk_output,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    show_progress=True
+                )
+
+                all_contents.append(result.content)
+                total_input_tokens += result.input_tokens
+                total_output_tokens += result.output_tokens
+                total_time += result.generation_time
+
+                if result.is_partial:
+                    is_partial = True
+                    logger.warning(f"⚠️ 第 {i} 段生成被中断")
+
+                logger.info(f"  第 {i} 段完成 ({result.output_tokens} tokens)")
+
+            except Exception as e:
+                logger.error(f"错误: 第 {i} 段生成失败 - {e}")
+                is_partial = True
+                # 继续处理下一段
+
+    # 合并所有段落
+    if not args.preview and all_contents:
+        logger.info("\n合并所有段落...")
+
+        # 合并内容
+        merged_content = f"# {args.format.capitalize()} 笔记\n\n"
+        merged_content += f"*本文档由 {len(text_chunks)} 段内容合并生成*\n\n"
+        merged_content += "---\n\n"
+
+        for i, content in enumerate(all_contents, 1):
+            if len(text_chunks) > 1:
+                merged_content += f"## 第 {i} 部分\n\n"
+            merged_content += content
+            merged_content += "\n\n---\n\n"
+
+        # 写入最终文件
+        try:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(merged_content)
+
+            # 删除临时文件
+            for i in range(1, len(text_chunks) + 1):
+                chunk_output = output_path.with_suffix(f'.part{i}.md')
+                if chunk_output.exists():
+                    chunk_output.unlink()
+
+            # 显示统计
+            logger.info("=" * 60)
+            logger.info("[DONE] 笔记生成完成！")
+            logger.info(f"输出文件: {output_path}")
+            logger.info(f"总输入 Token: ~{total_input_tokens}")
+            logger.info(f"总输出 Token: ~{total_output_tokens}")
+            logger.info(f"总生成时间: {total_time:.2f}秒")
+
+            if is_partial:
+                logger.warning("⚠️ 注意: 部分段落生成被中断")
+
+            logger.info("=" * 60)
+
+        except Exception as e:
+            logger.error(f"错误: 合并文件失败 - {e}")
+            return EXIT_OUTPUT_ERROR
+
+    return EXIT_SUCCESS
 
 
 def load_vocab_files(vocab_paths_str: Optional[str]) -> Optional[Dict[str, str]]:
@@ -248,6 +426,12 @@ def main() -> int:
     logger.debug(f"  词汇表: {args.vocab or '默认'}")
     logger.debug(f"  预览模式: {args.preview}")
     logger.debug(f"  显示提示词: {args.show_prompt}")
+
+    # Phase 5: 计算实际使用的参数
+    temperature = args.temperature if args.temperature is not None else FORMAT_TEMPERATURES.get(args.format, 0.5)
+    max_tokens = LENGTH_TOKENS.get(args.max_length, 4096)
+    logger.debug(f"  温度: {temperature}")
+    logger.debug(f"  输出长度: {args.max_length} ({max_tokens} tokens)")
 
     # -------------------------------------------------------------------------
     # Step 3: 验证输入文件
@@ -344,26 +528,49 @@ def main() -> int:
         logger.debug(f"  清洗后预览: {preview}")
 
     # -------------------------------------------------------------------------
-    # Step 8: 构建提示词
+    # Step 8: 智能分段（Phase 5: 处理超长文本）
     # -------------------------------------------------------------------------
-    logger.info("[6/6] 构建提示词...")
+    logger.info("[6/6] 检查文本长度...")
+
+    # 估算清洗后文本的 token 数
+    text_tokens = estimate_tokens(cleaned_text)
+    # 预留 4000 tokens 给提示词模板和系统提示词
+    context_limit = 12000  # 保守估计，为提示词预留空间
+
+    text_chunks = []
+    if text_tokens > context_limit:
+        logger.warning(f"⚠️ 文本较长（估算 {text_tokens} tokens），将自动分段处理")
+        text_chunks = split_text_into_chunks(cleaned_text, max_tokens=context_limit)
+        logger.info(f"  已分为 {len(text_chunks)} 段，逐段生成笔记")
+    else:
+        text_chunks = [cleaned_text]
+        logger.info(f"  [OK] 文本长度适中（估算 {text_tokens} tokens）")
+
+    # -------------------------------------------------------------------------
+    # Step 9: 构建提示词并生成
+    # -------------------------------------------------------------------------
+    logger.info("构建提示词...")
 
     # 创建提示词加载器
     prompt_loader = get_prompt_loader()
 
-    # 构建消息
-    messages = prompt_loader.build_messages(
-        format_type=args.format,
-        text=cleaned_text,
-        vocab=vocab
-    )
-
-    logger.info(f"  [OK] 提示词构建完成")
-    logger.info(f"    System prompt长度: {len(messages[0]['content'])} 字符")
-    logger.info(f"    User prompt长度: {len(messages[1]['content'])} 字符")
+    # 如果只有一段，正常构建提示词
+    if len(text_chunks) == 1:
+        messages = prompt_loader.build_messages(
+            format_type=args.format,
+            text=cleaned_text,
+            vocab=vocab
+        )
+        logger.info(f"  [OK] 提示词构建完成")
+        logger.info(f"    System prompt长度: {len(messages[0]['content'])} 字符")
+        logger.info(f"    User prompt长度: {len(messages[1]['content'])} 字符")
+    else:
+        # 多段文本，先显示提示词概览
+        logger.info(f"  [OK] 将逐段构建提示词，共 {len(text_chunks)} 段")
+        messages = None  # 将在生成时逐段构建
 
     # 如果指定了--show-prompt，打印提示词结构
-    if args.show_prompt:
+    if args.show_prompt and messages:
         logger.info("=" * 60)
         logger.info("【提示词结构预览】")
         logger.info("=" * 60)
@@ -378,50 +585,104 @@ def main() -> int:
         print("=" * 60)
 
     # -------------------------------------------------------------------------
-    # Step 9: 生成并输出结果
+    # Step 9: 调用大模型生成笔记
     # -------------------------------------------------------------------------
+    logger.info("=" * 60)
+    logger.info("【Phase 4】调用大模型生成笔记...")
+    logger.info("=" * 60)
+
     # 生成输出文件名
     output_path = generate_output_filename(input_path, args.format, output_dir)
 
-    # 构建Markdown内容（Phase 3：包含提示词预览，等待Phase 4大模型集成）
-    md_content = f"""# {args.format.capitalize()} - {input_path.stem}
+    # 检查 dashscope 包是否安装
+    if not HAS_DASHSCOPE:
+        logger.error("错误: 未安装 dashscope 包，无法调用大模型")
+        logger.error("请运行: pip install dashscope>=1.20.0")
+        return EXIT_CONFIG_ERROR
 
-## 原始文本
+    # 获取模型配置并创建客户端
+    try:
+        config = get_config()
+        client_config = config.get_client_config(args.model)
+        client = LLMClient(client_config)
+        logger.info(f"模型配置: {client_config.model_name}")
+    except RuntimeError as e:
+        logger.error(f"错误: {e}")
+        return EXIT_CONFIG_ERROR
+    except Exception as e:
+        logger.error(f"错误: 初始化 LLM 客户端失败 - {e}")
+        return EXIT_CONFIG_ERROR
 
-{cleaned_text}
+    # 生成笔记
+    logger.info(f"生成参数: 温度={temperature}, 最大长度={args.max_length} ({max_tokens} tokens)")
 
----
+    # 处理多段文本的生成
+    if len(text_chunks) > 1:
+        # 多段文本模式：逐段生成，然后合并
+        return generate_multi_chunk(
+            client, prompt_loader, text_chunks, vocab, args,
+            temperature, max_tokens, output_path, logger
+        )
 
-## 笔记内容
-
-*[待Phase 4完成后由大模型生成结构化笔记]*
-
-- 格式: {args.format}
-- 模型: {args.model}
-- System Prompt长度: {len(messages[0]['content'])} 字符
-- User Prompt长度: {len(messages[1]['content'])} 字符
-- 词汇表条目: {len(vocab) if vocab else 0} 条
-
-"""
-
+    # 单段文本生成
     if args.preview:
-        # 预览模式：打印到终端
-        logger.info("=" * 60)
-        logger.info("【预览模式】输出内容:")
-        logger.info("=" * 60)
-        print(md_content)
-        logger.info("=" * 60)
-        logger.info("[DONE] 预览完成（未保存文件）")
+        # 预览模式：流式输出到终端
+        if args.no_stream:
+            # 非流式模式
+            logger.info("【生成中，按 Ctrl+C 可中断】\n")
+            try:
+                result = client.generate(messages, temperature=temperature, max_tokens=max_tokens)
+                print("-" * 60)
+                print(result.content)
+                print("-" * 60)
+                logger.info("\n[DONE] 预览完成（未保存文件）")
+                logger.info(f"输入 Token: ~{result.input_tokens}, 输出 Token: ~{result.output_tokens}")
+            except KeyboardInterrupt:
+                logger.info("\n[DONE] 生成被中断")
+        else:
+            # 流式模式
+            logger.info("【流式生成中，按 Ctrl+C 可中断】\n")
+            print("-" * 60)
+
+            generated_content = ""
+            try:
+                for chunk in client.generate_stream(messages, temperature=temperature, max_tokens=max_tokens):
+                    print(chunk, end='', flush=True)
+                    generated_content += chunk
+                print("\n" + "-" * 60)
+                logger.info("\n[DONE] 预览完成（未保存文件）")
+            except KeyboardInterrupt:
+                print("\n" + "-" * 60)
+                logger.info("\n[DONE] 生成被中断（预览模式不保存）")
     else:
-        # 文件模式：写入Markdown
+        # 文件模式：生成并保存到文件
+        logger.info("正在生成笔记，请稍候...")
+        logger.info("【按 Ctrl+C 可中断，已生成内容将保存为 .partial.md】")
+
         try:
-            write_markdown(md_content, output_path)
+            result = client.generate_to_file(
+                messages, output_path,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                show_progress=True
+            )
+
+            # 显示生成统计
             logger.info("=" * 60)
-            logger.info("[DONE] 处理完成！")
+            logger.info("[DONE] 笔记生成完成！")
             logger.info(f"输出文件: {output_path}")
+            logger.info(f"输入 Token: ~{result.input_tokens}")
+            logger.info(f"输出 Token: ~{result.output_tokens}")
+            logger.info(f"生成时间: {result.generation_time:.2f}秒")
+
+            if result.is_partial:
+                logger.warning("⚠️ 注意: 生成被中断，结果为部分内容")
+                logger.info(f"部分结果保存至: {output_path.with_suffix('.partial.md')}")
+
             logger.info("=" * 60)
+
         except Exception as e:
-            logger.error(f"错误: 写入输出文件失败 - {e}")
+            logger.error(f"错误: 生成笔记失败 - {e}")
             return EXIT_OUTPUT_ERROR
 
     return EXIT_SUCCESS

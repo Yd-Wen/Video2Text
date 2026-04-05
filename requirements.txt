@@ -15,6 +15,11 @@ openai-whisper>=20231117
 # 注意: 此包仅提供Python绑定，系统仍需安装FFmpeg可执行文件
 ffmpeg-python>=0.2.0
 
+# DashScope - 阿里云灵积平台SDK
+# 功能: 调用通义千问等模型API
+# 用途: Text2Note笔记生成功能的核心依赖
+dashscope>=1.20.0
+
 # tqdm - 进度条显示
 # 功能: 显示音频提取和转录进度
 # 支持: 终端进度条、预估剩余时间
